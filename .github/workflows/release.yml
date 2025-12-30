@@ -35,9 +35,13 @@ jobs:
         # Strip debug symbols for smaller binary
         strip dist/osx-bench
 
+        # Ad-hoc code sign to avoid "unidentified developer" on first run
+        codesign --force --sign - dist/osx-bench
+
         # Get binary info
         file dist/osx-bench
         ls -lh dist/osx-bench
+        codesign -dv dist/osx-bench
 
     - name: Create tarball
       run: |
@@ -73,6 +77,7 @@ jobs:
 
           # Extract and run
           tar -xzf osx-bench-macos-arm64.tar.gz
+          xattr -cr osx-bench  # Remove quarantine attribute
           chmod +x osx-bench
           ./osx-bench run
           ```
