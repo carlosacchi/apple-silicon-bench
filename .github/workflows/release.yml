@@ -59,13 +59,21 @@ jobs:
 
           ### Installation
 
+          **Option 1: Download from browser**
+          Click on `osx-bench-macos-arm64.tar.gz` below, then extract and run.
+
+          **Option 2: Command line**
           ```bash
-          # Download and extract
-          curl -LO https://github.com/carlosacchi/apple-silicon-bench/releases/download/${{ steps.version.outputs.VERSION }}/osx-bench-macos-arm64.tar.gz
+          # Download using gh CLI (recommended)
+          gh release download ${{ steps.version.outputs.VERSION }} -R carlosacchi/apple-silicon-bench -p "osx-bench-macos-arm64.tar.gz"
+
+          # Or download with curl
+          curl -L -o osx-bench-macos-arm64.tar.gz \
+            "https://github.com/carlosacchi/apple-silicon-bench/releases/download/${{ steps.version.outputs.VERSION }}/osx-bench-macos-arm64.tar.gz"
+
+          # Extract and run
           tar -xzf osx-bench-macos-arm64.tar.gz
           chmod +x osx-bench
-
-          # Run benchmark
           ./osx-bench run
           ```
 
