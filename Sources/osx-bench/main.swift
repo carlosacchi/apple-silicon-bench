@@ -6,7 +6,7 @@ struct OSXBench: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "osx-bench",
         abstract: "Benchmark tool for Apple Silicon Macs",
-        version: "1.0.0",
+        version: AppInfo.version,
         subcommands: [Run.self, Info.self],
         defaultSubcommand: Run.self
     )
@@ -33,7 +33,7 @@ struct Run: AsyncParsableCommand {
         print("""
 
         ╔═══════════════════════════════════════════════════════════════╗
-        ║                      OSX-BENCH v1.0.0                        ║
+        ║                 \(AppInfo.fullName.uppercased()) v\(AppInfo.version)                   ║
         ║              Benchmark Tool for Apple Silicon                 ║
         ╚═══════════════════════════════════════════════════════════════╝
 

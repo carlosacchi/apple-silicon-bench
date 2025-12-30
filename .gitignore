@@ -46,7 +46,7 @@ Temporary Items
 .vscode/
 
 # Build artifacts
-osx-bench
+/osx-bench
 *.o
 *.a
 
