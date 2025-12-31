@@ -20,9 +20,7 @@ jobs:
 
     - name: Get version
       id: version
-      run: |
-        echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-        echo "VERSION_NUM=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
     - name: Build Release Binary
       run: |
@@ -44,97 +42,11 @@ jobs:
         file dist/osx-bench
         ls -lh dist/osx-bench
 
-    - name: Build App Bundle
-      run: |
-        VERSION_NUM="${{ steps.version.outputs.VERSION_NUM }}"
-        APP_NAME="AppleSiliconBench"
-
-        # Create app bundle structure
-        mkdir -p "dist/$APP_NAME.app/Contents/MacOS"
-        mkdir -p "dist/$APP_NAME.app/Contents/Resources"
-
-        # Copy binary
-        cp dist/osx-bench "dist/$APP_NAME.app/Contents/MacOS/"
-
-        # Create Info.plist
-        cat > "dist/$APP_NAME.app/Contents/Info.plist" << EOF
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>CFBundleDevelopmentRegion</key>
-            <string>en</string>
-            <key>CFBundleExecutable</key>
-            <string>osx-bench</string>
-            <key>CFBundleIconFile</key>
-            <string>AppIcon</string>
-            <key>CFBundleIdentifier</key>
-            <string>com.carlosacchi.osx-bench</string>
-            <key>CFBundleInfoDictionaryVersion</key>
-            <string>6.0</string>
-            <key>CFBundleName</key>
-            <string>Apple Silicon Bench</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>CFBundleShortVersionString</key>
-            <string>$VERSION_NUM</string>
-            <key>CFBundleVersion</key>
-            <string>1</string>
-            <key>LSMinimumSystemVersion</key>
-            <string>13.0</string>
-            <key>LSUIElement</key>
-            <true/>
-            <key>NSHighResolutionCapable</key>
-            <true/>
-            <key>NSHumanReadableCopyright</key>
-            <string>Copyright 2024 Carlos Acchi. MIT License.</string>
-        </dict>
-        </plist>
-        EOF
-
-        # Copy icon
-        cp Resources/AppIcon.icns "dist/$APP_NAME.app/Contents/Resources/"
-
-        # Ad-hoc code sign the app bundle
-        codesign --force --sign - "dist/$APP_NAME.app"
-
-        echo "App bundle created"
-        ls -la "dist/$APP_NAME.app/Contents/"
-
-    - name: Create DMG
-      run: |
-        VERSION_NUM="${{ steps.version.outputs.VERSION_NUM }}"
-        APP_NAME="AppleSiliconBench"
-        DMG_NAME="AppleSiliconBench-${VERSION_NUM}.dmg"
-
-        # Create temporary DMG directory
-        mkdir -p dist/dmg_temp
-        cp -R "dist/$APP_NAME.app" dist/dmg_temp/
-
-        # Create DMG
-        hdiutil create -volname "Apple Silicon Bench" \
-            -srcfolder dist/dmg_temp \
-            -ov -format UDZO \
-            "dist/$DMG_NAME"
-
-        # Clean up
-        rm -rf dist/dmg_temp
-
-        echo "DMG created: $DMG_NAME"
-        ls -lh "dist/$DMG_NAME"
-
-    - name: Create Archives
+    - name: Create Archive
       run: |
         cd dist
-
-        # CLI binary tarball
         tar -czvf osx-bench-macos-arm64.tar.gz osx-bench
         shasum -a 256 osx-bench-macos-arm64.tar.gz > osx-bench-macos-arm64.tar.gz.sha256
-
-        # DMG checksum
-        shasum -a 256 AppleSiliconBench-*.dmg > AppleSiliconBench.dmg.sha256
-
-        ls -la
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
@@ -145,24 +57,14 @@ jobs:
 
           Benchmark tool for M1, M2, M3, M4, M5 Apple Silicon Macs.
 
-          ### Downloads
+          ### Download
 
           | File | Description |
           |------|-------------|
-          | `AppleSiliconBench-${{ steps.version.outputs.VERSION_NUM }}.dmg` | macOS App with icon (recommended) |
-          | `osx-bench-macos-arm64.tar.gz` | CLI binary only |
+          | `osx-bench-macos-arm64.tar.gz` | CLI binary for Apple Silicon |
 
           ### Installation
 
-          **Option 1: DMG (recommended)**
-          1. Download `AppleSiliconBench-${{ steps.version.outputs.VERSION_NUM }}.dmg`
-          2. Open the DMG and drag `AppleSiliconBench.app` to Applications
-          3. Run from Terminal:
-          ```bash
-          /Applications/AppleSiliconBench.app/Contents/MacOS/osx-bench run
-          ```
-
-          **Option 2: CLI Binary**
           ```bash
           # Download
           curl -LO "https://github.com/carlosacchi/apple-silicon-bench/releases/download/${{ steps.version.outputs.VERSION }}/osx-bench-macos-arm64.tar.gz"
@@ -190,7 +92,5 @@ jobs:
         files: |
           dist/osx-bench-macos-arm64.tar.gz
           dist/osx-bench-macos-arm64.tar.gz.sha256
-          dist/AppleSiliconBench-${{ steps.version.outputs.VERSION_NUM }}.dmg
-          dist/AppleSiliconBench.dmg.sha256
         draft: false
         prerelease: false
