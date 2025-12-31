@@ -10,13 +10,18 @@ enum AppInfo {
 
     // Developer info
     static let developer = "Carlo Sacchi"
-    static let copyright = "Copyright © 2024 Carlo Sacchi"
     static let license = "MIT License"
+    static let releaseDate = "2025-01-01"  // Updated with each release
+
+    static var copyright: String {
+        let year = Calendar.current.component(.year, from: Date())
+        return "Copyright © \(year) Carlo Sacchi"
+    }
 
     static var versionString: String {
         """
-        \(fullName) v\(version)
-        Developed by \(developer)
+        \(fullName) v\(version) (\(releaseDate))
+        Designed and developed by \(developer)
         \(repository)
         \(copyright) - \(license)
         """
