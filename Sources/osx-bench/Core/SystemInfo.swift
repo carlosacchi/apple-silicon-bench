@@ -9,6 +9,9 @@ struct SystemInfo: Codable {
     let ramGB: Int
     let osVersion: String
     let modelIdentifier: String
+    let diskModel: String
+    let diskCapacityGB: Int
+    let diskType: String  // "SSD" or "HDD"
 
     static func gather() throws -> SystemInfo {
         let machineId = getMachineId()
@@ -17,6 +20,7 @@ struct SystemInfo: Codable {
         let ram = getRAMSize()
         let os = getOSVersion()
         let model = getModelIdentifier()
+        let diskInfo = getDiskInfo()
 
         return SystemInfo(
             machineId: machineId,
@@ -26,7 +30,10 @@ struct SystemInfo: Codable {
             totalCores: pCores + eCores,
             ramGB: ram,
             osVersion: os,
-            modelIdentifier: model
+            modelIdentifier: model,
+            diskModel: diskInfo.model,
+            diskCapacityGB: diskInfo.capacityGB,
+            diskType: diskInfo.type
         )
     }
 
@@ -44,6 +51,7 @@ struct SystemInfo: Codable {
     }
 
     func printDetailed() {
+        let diskSummary = "\(diskCapacityGB) GB \(diskType)"
         print("""
 
         ┌─────────────────────────────────────────────────────────────┐
@@ -55,6 +63,8 @@ struct SystemInfo: Codable {
         │ E-Cores:       \(String(coresEfficiency).padding(toLength: 43, withPad: " ", startingAt: 0)) │
         │ Total Cores:   \(String(totalCores).padding(toLength: 43, withPad: " ", startingAt: 0)) │
         │ RAM:           \(String("\(ramGB) GB").padding(toLength: 43, withPad: " ", startingAt: 0)) │
+        │ Disk:          \(diskSummary.padding(toLength: 43, withPad: " ", startingAt: 0)) │
+        │ Disk Model:    \(diskModel.padding(toLength: 43, withPad: " ", startingAt: 0)) │
         │ macOS:         \(osVersion.padding(toLength: 43, withPad: " ", startingAt: 0)) │
         │ Model:         \(modelIdentifier.padding(toLength: 43, withPad: " ", startingAt: 0)) │
         └─────────────────────────────────────────────────────────────┘
@@ -138,6 +148,56 @@ struct SystemInfo: Codable {
         return String(cString: model)
     }
 
+    private static func getDiskInfo() -> (model: String, capacityGB: Int, type: String) {
+        // Use diskutil to get disk information
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+        process.arguments = ["info", "disk0"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let output = String(data: data, encoding: .utf8) else {
+                return ("Unknown", 0, "Unknown")
+            }
+
+            var model = "Unknown"
+            var capacityGB = 0
+            var isSSD = false
+
+            for line in output.components(separatedBy: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+                if trimmed.hasPrefix("Device / Media Name:") {
+                    model = trimmed
+                        .replacingOccurrences(of: "Device / Media Name:", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                } else if trimmed.hasPrefix("Disk Size:") {
+                    // Parse size like "251.0 GB (..."
+                    let sizeStr = trimmed
+                        .replacingOccurrences(of: "Disk Size:", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                    if let gbRange = sizeStr.range(of: #"[\d.]+"#, options: .regularExpression) {
+                        if let gb = Double(sizeStr[gbRange]) {
+                            capacityGB = Int(gb.rounded())
+                        }
+                    }
+                } else if trimmed.hasPrefix("Solid State:") {
+                    isSSD = trimmed.contains("Yes")
+                }
+            }
+
+            return (model, capacityGB, isSSD ? "SSD" : "HDD")
+        } catch {
+            return ("Unknown", 0, "Unknown")
+        }
+    }
+
     // MARK: - Privacy-Safe Export Version
 
     /// Returns a copy without machine ID for privacy-safe JSON exports
@@ -149,7 +209,10 @@ struct SystemInfo: Codable {
             totalCores: totalCores,
             ramGB: ramGB,
             osVersion: osVersion,
-            modelIdentifier: modelIdentifier
+            modelIdentifier: modelIdentifier,
+            diskModel: diskModel,
+            diskCapacityGB: diskCapacityGB,
+            diskType: diskType
         )
     }
 }
@@ -163,4 +226,7 @@ struct SystemInfoExport: Codable {
     let ramGB: Int
     let osVersion: String
     let modelIdentifier: String
+    let diskModel: String
+    let diskCapacityGB: Int
+    let diskType: String
 }
