@@ -116,10 +116,29 @@ This project follows [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PAT
 | Documentation only | PATCH | README updates, comments |
 | Dependencies update | PATCH or MINOR | Security fix = PATCH, new capability = MINOR |
 
-**Version files to update:**
+**Files to update on each release:**
 1. `Package.swift` - `let version = "X.Y.Z"`
 2. `Sources/osx-bench/Core/Version.swift` - `static let version = "X.Y.Z"`
 3. `Sources/osx-bench/Core/Version.swift` - `static let releaseDate = "YYYY-MM-DD"`
+4. `CHANGELOG.md` - Add new version section with changes (REQUIRED!)
+
+**CHANGELOG.md format:**
+```markdown
+## [X.Y.Z] - YYYY-MM-DD
+
+### Added
+- New features
+
+### Changed
+- Changes to existing features
+
+### Fixed
+- Bug fixes
+
+### Security
+- Security-related changes
+```
+Also add link at bottom: `[X.Y.Z]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/vX.Y.Z`
 
 **Release process:**
 ```bash
