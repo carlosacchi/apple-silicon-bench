@@ -82,7 +82,8 @@ struct DiskBenchmark: Benchmark {
             arc4random_buf(ptr.baseAddress!, chunkSize)
         }
 
-        let fd = open(filePath.path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+        // Use O_NOFOLLOW to prevent symlink attacks, 0o600 for owner-only access
+        let fd = open(filePath.path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0o600)
         guard fd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
         defer { close(fd) }
 
@@ -116,7 +117,7 @@ struct DiskBenchmark: Benchmark {
             arc4random_buf(ptr.baseAddress!, chunkSize)
         }
 
-        let writefd = open(filePath.path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+        let writefd = open(filePath.path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0o600)
         guard writefd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
 
         var written = 0
@@ -131,7 +132,7 @@ struct DiskBenchmark: Benchmark {
 
         defer { try? FileManager.default.removeItem(at: filePath) }
 
-        let fd = open(filePath.path, O_RDONLY)
+        let fd = open(filePath.path, O_RDONLY | O_NOFOLLOW)
         guard fd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
         defer { close(fd) }
 
@@ -158,7 +159,7 @@ struct DiskBenchmark: Benchmark {
         let filePath = testDir.appendingPathComponent("rand_write_test")
 
         let fileSize = 256 * 1024 * 1024  // 256 MB sparse file
-        let fd = open(filePath.path, O_RDWR | O_CREAT | O_TRUNC, 0o644)
+        let fd = open(filePath.path, O_RDWR | O_CREAT | O_TRUNC | O_NOFOLLOW, 0o600)
         guard fd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
         defer {
             close(fd)
@@ -197,7 +198,7 @@ struct DiskBenchmark: Benchmark {
         let fileSize = 256 * 1024 * 1024  // 256 MB
         let chunkSize = 4 * 1024 * 1024
 
-        let writefd = open(filePath.path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+        let writefd = open(filePath.path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0o600)
         guard writefd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
 
         var chunk = [UInt8](repeating: 0x5A, count: chunkSize)
@@ -211,7 +212,7 @@ struct DiskBenchmark: Benchmark {
 
         defer { try? FileManager.default.removeItem(at: filePath) }
 
-        let fd = open(filePath.path, O_RDONLY)
+        let fd = open(filePath.path, O_RDONLY | O_NOFOLLOW)
         guard fd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
         defer { close(fd) }
 

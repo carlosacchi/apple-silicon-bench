@@ -91,10 +91,12 @@ struct SystemInfo: Codable {
             return existingId.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        // Generate new ID
+        // Generate new ID with secure file permissions
         let newId = UUID().uuidString
-        try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try? newId.write(to: idFile, atomically: true, encoding: .utf8)
+        // Set restrictive permissions on the machine ID file (owner read/write only)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: idFile.path)
         return newId
     }
 

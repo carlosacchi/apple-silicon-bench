@@ -5,6 +5,16 @@ struct HTMLReportGenerator {
     let results: BenchmarkResults
     let scores: BenchmarkScores
 
+    /// Escape HTML special characters to prevent XSS
+    private func escapeHTML(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#x27;")
+    }
+
     private func formatScoreHTML(_ score: Double) -> String {
         score > 0 ? String(Int(score)) : "<span style=\"color: #e74c3c;\">Failed</span>"
     }
@@ -44,8 +54,8 @@ struct HTMLReportGenerator {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>OSX-Bench Report - \(systemInfo.chip)</title>
-            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+            <title>OSX-Bench Report - \(escapeHTML(systemInfo.chip))</title>
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-9nhczxUqK87bcKHh20fSQcTGD4qq5GhayNYSYWqwBkINBhOfQLg/P5HG5lF1urn4" crossorigin="anonymous"></script>
             <style>
                 :root {
                     --bg-primary: #1a1a2e;
@@ -315,7 +325,7 @@ struct HTMLReportGenerator {
                 <header>
                     <h1>OSX-Bench</h1>
                     <p class="subtitle">Apple Silicon Performance Report</p>
-                    <div class="apple-silicon-badge">\(systemInfo.chip)</div>
+                    <div class="apple-silicon-badge">\(escapeHTML(systemInfo.chip))</div>
                 </header>
 
                 \(thermalWarning)
@@ -323,7 +333,7 @@ struct HTMLReportGenerator {
                 <section class="system-info">
                     <div class="info-item">
                         <div class="info-label">Chip</div>
-                        <div class="info-value">\(systemInfo.chip)</div>
+                        <div class="info-value">\(escapeHTML(systemInfo.chip))</div>
                     </div>
                     <div class="info-item">
                         <div class="info-label">Cores</div>
@@ -335,11 +345,11 @@ struct HTMLReportGenerator {
                     </div>
                     <div class="info-item">
                         <div class="info-label">macOS</div>
-                        <div class="info-value">\(systemInfo.osVersion)</div>
+                        <div class="info-value">\(escapeHTML(systemInfo.osVersion))</div>
                     </div>
                     <div class="info-item">
                         <div class="info-label">Date</div>
-                        <div class="info-value">\(formattedDate)</div>
+                        <div class="info-value">\(escapeHTML(formattedDate))</div>
                     </div>
                 </section>
 
@@ -486,8 +496,8 @@ struct HTMLReportGenerator {
                     \(result.tests.map { test in
                         """
                         <div class="test-item">
-                            <div class="test-name">\(test.name)</div>
-                            <div class="test-value">\(test.formattedValue) <span class="test-unit">\(test.unit)</span></div>
+                            <div class="test-name">\(escapeHTML(test.name))</div>
+                            <div class="test-value">\(escapeHTML(test.formattedValue)) <span class="test-unit">\(escapeHTML(test.unit))</span></div>
                         </div>
                         """
                     }.joined(separator: "\n"))
