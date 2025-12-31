@@ -1,13 +1,13 @@
 # Apple Silicon Bench
 
-**A native macOS benchmark tool for Apple Silicon Macs (M1, M2, M3, M4)**
+**A native macOS benchmark tool for Apple Silicon Macs (M1, M2, M3, M4, M5)**
 
 [![Release](https://img.shields.io/github/v/release/carlosacchi/apple-silicon-bench)](https://github.com/carlosacchi/apple-silicon-bench/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-macOS-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org/)
 
-A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors. Compare your M1, M2, M3, M4 (and future chips) performance with comprehensive CPU, memory, and disk benchmarks.
+A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors. Compare your M1, M2, M3, M4, M5 (and future chips) performance with comprehensive CPU, memory, and disk benchmarks.
 
 ## Features
 
@@ -162,7 +162,7 @@ Scores are normalized against a baseline (M1 base chip = 1000 points per categor
 ## Supported Systems
 
 - **macOS**: 13.0 (Ventura) or later
-- **Architecture**: Apple Silicon only (M1, M2, M3, M4 family)
+- **Architecture**: Apple Silicon only (M1, M2, M3, M4, M5 family)
 - **Processor Types**: MacBook Air, MacBook Pro, Mac mini, Mac Studio, Mac Pro, iMac
 
 ## Comparison Examples
@@ -170,7 +170,7 @@ Scores are normalized against a baseline (M1 base chip = 1000 points per categor
 Use this tool to compare different Apple Silicon configurations:
 
 - M1 vs M1 Pro vs M1 Max vs M1 Ultra
-- M2 vs M3 vs M4
+- M2 vs M3 vs M4 vs M5
 - Base vs Pro vs Max variants
 - Different RAM configurations
 - MacBook vs Mac Studio thermal performance
@@ -200,7 +200,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Keywords
 
-Apple Silicon benchmark, M1 benchmark, M2 benchmark, M3 benchmark, M4 benchmark, macOS performance test, Mac benchmark tool, Apple Silicon performance, M1 Pro benchmark, M1 Max benchmark, M2 Pro benchmark, M3 Pro benchmark, M4 Pro benchmark, Mac CPU benchmark, Mac memory benchmark, Mac SSD benchmark, Apple chip comparison, ARM Mac benchmark, native macOS benchmark
+Apple Silicon benchmark, M1 benchmark, M2 benchmark, M3 benchmark, M4 benchmark, M5 benchmark, macOS performance test, Mac benchmark tool, Apple Silicon performance, M1 Pro benchmark, M1 Max benchmark, M2 Pro benchmark, M3 Pro benchmark, M4 Pro benchmark, M5 Pro benchmark, Mac CPU benchmark, Mac memory benchmark, Mac SSD benchmark, Apple chip comparison, ARM Mac benchmark, native macOS benchmark
 
 ---
 

@@ -94,8 +94,8 @@ jobs:
 
           | File | Description |
           |------|-------------|
-          | `Apple-Silicon-Bench.app.zip` | macOS App with icon (recommended) |
-          | `osx-bench-macos-arm64.tar.gz` | CLI binary only |
+          | `Apple-Silicon-Bench.app.zip` | macOS App with icon for M1/M2/M3/M4/M5 (recommended) |
+          | `osx-bench-macos-arm64.tar.gz` | CLI binary for M1/M2/M3/M4/M5 |
 
           ### Installation
 
