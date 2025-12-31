@@ -39,37 +39,45 @@ struct SystemInfo: Codable {
 
     func printSummary() {
         let thermal = ThermalMonitor.currentState()
-        print("┌─────────────────────────────────────────────────────────────┐")
-        print("│ System Information                                          │")
-        print("├─────────────────────────────────────────────────────────────┤")
-        print("│ Chip:        \(chip.padding(toLength: 45, withPad: " ", startingAt: 0)) │")
-        print("│ Cores:       \(String("\(coresPerformance)P + \(coresEfficiency)E (\(totalCores) total)").padding(toLength: 45, withPad: " ", startingAt: 0)) │")
-        print("│ RAM:         \(String("\(ramGB) GB").padding(toLength: 45, withPad: " ", startingAt: 0)) │")
-        print("│ macOS:       \(osVersion.padding(toLength: 45, withPad: " ", startingAt: 0)) │")
-        print("│ Thermal:     \(thermal.emoji) \(thermal.description.padding(toLength: 42, withPad: " ", startingAt: 0)) │")
-        print("└─────────────────────────────────────────────────────────────┘")
+        let line = String(repeating: "─", count: 44)
+        print(line)
+        print("  System Information")
+        print(line)
+        print(dotPad("Chip", chip))
+        print(dotPad("Cores", "\(coresPerformance)P + \(coresEfficiency)E (\(totalCores) total)"))
+        print(dotPad("RAM", "\(ramGB) GB"))
+        print(dotPad("macOS", osVersion))
+        print(dotPad("Thermal", "\(thermal.emoji) \(thermal.description)"))
+        print(line)
     }
 
     func printDetailed() {
         let diskSummary = "\(diskCapacityGB) GB \(diskType)"
-        print("""
+        let line = String(repeating: "─", count: 50)
+        print()
+        print(line)
+        print("  System Information (Detailed)")
+        print(line)
+        print(dotPad("Machine ID", machineId, width: 50))
+        print(dotPad("Chip", chip, width: 50))
+        print(dotPad("P-Cores", String(coresPerformance), width: 50))
+        print(dotPad("E-Cores", String(coresEfficiency), width: 50))
+        print(dotPad("Total Cores", String(totalCores), width: 50))
+        print(dotPad("RAM", "\(ramGB) GB", width: 50))
+        print(dotPad("Disk", diskSummary, width: 50))
+        print(dotPad("Disk Model", diskModel, width: 50))
+        print(dotPad("macOS", osVersion, width: 50))
+        print(dotPad("Model", modelIdentifier, width: 50))
+        print(line)
+        print()
+    }
 
-        ┌─────────────────────────────────────────────────────────────┐
-        │ System Information (Detailed)                               │
-        ├─────────────────────────────────────────────────────────────┤
-        │ Machine ID:    \(machineId.padding(toLength: 43, withPad: " ", startingAt: 0)) │
-        │ Chip:          \(chip.padding(toLength: 43, withPad: " ", startingAt: 0)) │
-        │ P-Cores:       \(String(coresPerformance).padding(toLength: 43, withPad: " ", startingAt: 0)) │
-        │ E-Cores:       \(String(coresEfficiency).padding(toLength: 43, withPad: " ", startingAt: 0)) │
-        │ Total Cores:   \(String(totalCores).padding(toLength: 43, withPad: " ", startingAt: 0)) │
-        │ RAM:           \(String("\(ramGB) GB").padding(toLength: 43, withPad: " ", startingAt: 0)) │
-        │ Disk:          \(diskSummary.padding(toLength: 43, withPad: " ", startingAt: 0)) │
-        │ Disk Model:    \(diskModel.padding(toLength: 43, withPad: " ", startingAt: 0)) │
-        │ macOS:         \(osVersion.padding(toLength: 43, withPad: " ", startingAt: 0)) │
-        │ Model:         \(modelIdentifier.padding(toLength: 43, withPad: " ", startingAt: 0)) │
-        └─────────────────────────────────────────────────────────────┘
-
-        """)
+    private func dotPad(_ label: String, _ value: String, width: Int = 44) -> String {
+        // Format: "  Label .......... Value"
+        let prefix = "  \(label) "
+        let suffix = " \(value)"
+        let dotsCount = max(2, width - prefix.count - suffix.count)
+        return prefix + String(repeating: ".", count: dotsCount) + suffix
     }
 
     // MARK: - Private Helpers

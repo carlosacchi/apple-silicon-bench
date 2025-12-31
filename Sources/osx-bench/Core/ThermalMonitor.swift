@@ -47,7 +47,7 @@ struct ThermalMonitor {
     /// Print current thermal state
     static func printStatus() {
         let state = currentState()
-        print("│ Thermal:     \(state.emoji) \(state.description.padding(toLength: 42, withPad: " ", startingAt: 0)) │")
+        print("  Thermal .... \(state.emoji) \(state.description)")
     }
 
     /// Check if system is throttling

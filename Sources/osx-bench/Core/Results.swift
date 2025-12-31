@@ -109,20 +109,25 @@ struct BenchmarkScores: Codable {
     let total: Double
 
     func printSummary() {
-        print("┌─────────────────────────────────────────────────────────────┐")
-        print("│                      BENCHMARK SCORES                       │")
-        print("├─────────────────────────────────────────────────────────────┤")
-        print("│                                                             │")
-        print("│   CPU Single-Core:    \(String(format: "%8.0f", cpuSingleCore).padding(toLength: 35, withPad: " ", startingAt: 0)) │")
-        print("│   CPU Multi-Core:     \(String(format: "%8.0f", cpuMultiCore).padding(toLength: 35, withPad: " ", startingAt: 0)) │")
-        print("│   Memory:             \(String(format: "%8.0f", memory).padding(toLength: 35, withPad: " ", startingAt: 0)) │")
-        print("│   Disk:               \(String(format: "%8.0f", disk).padding(toLength: 35, withPad: " ", startingAt: 0)) │")
-        print("│                                                             │")
-        print("├─────────────────────────────────────────────────────────────┤")
-        print("│                                                             │")
-        print("│   TOTAL SCORE:        \(String(format: "%8.0f", total).padding(toLength: 35, withPad: " ", startingAt: 0)) │")
-        print("│                                                             │")
-        print("└─────────────────────────────────────────────────────────────┘")
+        let line = String(repeating: "─", count: 44)
+        print(line)
+        print("  BENCHMARK SCORES")
+        print(line)
+        print(dotPad("CPU Single-Core", Int(cpuSingleCore)))
+        print(dotPad("CPU Multi-Core", Int(cpuMultiCore)))
+        print(dotPad("Memory", Int(memory)))
+        print(dotPad("Disk", Int(disk)))
+        print(line)
+        print(dotPad("TOTAL SCORE", Int(total)))
+        print(line)
+    }
+
+    private func dotPad(_ label: String, _ value: Int) -> String {
+        let valueStr = String(value)
+        let prefix = "  \(label) "
+        let suffix = " \(valueStr)"
+        let dotsCount = max(2, 44 - prefix.count - suffix.count)
+        return prefix + String(repeating: ".", count: dotsCount) + suffix
     }
 }
 

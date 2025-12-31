@@ -38,18 +38,14 @@ struct Run: AsyncParsableCommand {
 
         let title = "\(AppInfo.fullName.uppercased()) v\(AppInfo.version)"
         let subtitle = "Benchmark Tool for Apple Silicon"
-        let boxWidth = 63
-        let titlePadding = (boxWidth - title.count) / 2
-        let subtitlePadding = (boxWidth - subtitle.count) / 2
+        let line = String(repeating: "═", count: 44)
 
-        print("""
-
-        ╔═══════════════════════════════════════════════════════════════╗
-        ║\(String(repeating: " ", count: titlePadding))\(title)\(String(repeating: " ", count: boxWidth - titlePadding - title.count))║
-        ║\(String(repeating: " ", count: subtitlePadding))\(subtitle)\(String(repeating: " ", count: boxWidth - subtitlePadding - subtitle.count))║
-        ╚═══════════════════════════════════════════════════════════════╝
-
-        """)
+        print()
+        print(line)
+        print("  \(title)")
+        print("  \(subtitle)")
+        print(line)
+        print()
 
         systemInfo.printSummary()
         print()

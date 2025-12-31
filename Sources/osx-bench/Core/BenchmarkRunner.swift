@@ -94,16 +94,18 @@ actor BenchmarkRunner {
     }
 
     private func printThermalSummary() {
-        print("\n┌─────────────────────────────────────────────────────────────┐")
-        print("│ Thermal Summary                                             │")
-        print("├─────────────────────────────────────────────────────────────┤")
-        print("│ Progression: \(thermalCollector.summary().padding(toLength: 45, withPad: " ", startingAt: 0)) │")
+        let line = String(repeating: "─", count: 44)
+        print()
+        print(line)
+        print("  Thermal Summary")
+        print(line)
+        print("  Progression .... \(thermalCollector.summary())")
 
         if thermalCollector.hadThrottling {
-            print("│ ⚠️  Throttling was detected during benchmark!               │")
-            print("│    Results may be lower than optimal performance.          │")
+            print("  ⚠️  Throttling detected during benchmark!")
+            print("     Results may be lower than optimal.")
         }
-        print("└─────────────────────────────────────────────────────────────┘")
+        print(line)
     }
 }
 
