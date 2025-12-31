@@ -36,11 +36,17 @@ struct Run: AsyncParsableCommand {
     func run() async throws {
         let systemInfo = try SystemInfo.gather()
 
+        let title = "\(AppInfo.fullName.uppercased()) v\(AppInfo.version)"
+        let subtitle = "Benchmark Tool for Apple Silicon"
+        let boxWidth = 63
+        let titlePadding = (boxWidth - title.count) / 2
+        let subtitlePadding = (boxWidth - subtitle.count) / 2
+
         print("""
 
         ╔═══════════════════════════════════════════════════════════════╗
-        ║                 \(AppInfo.fullName.uppercased()) v\(AppInfo.version)                   ║
-        ║              Benchmark Tool for Apple Silicon                 ║
+        ║\(String(repeating: " ", count: titlePadding))\(title)\(String(repeating: " ", count: boxWidth - titlePadding - title.count))║
+        ║\(String(repeating: " ", count: subtitlePadding))\(subtitle)\(String(repeating: " ", count: boxWidth - subtitlePadding - subtitle.count))║
         ╚═══════════════════════════════════════════════════════════════╝
 
         """)

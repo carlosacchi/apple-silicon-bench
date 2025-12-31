@@ -41,7 +41,7 @@ struct HTMLReportGenerator {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>OSX-Bench Report - \(systemInfo.chip)</title>
-            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-/Z8VrJ8gD0r9NRYjAMf0bCOI/w2Ij1N7q77r7dpgBwJUAU9q6VxW5H5aG8VxkM7N" crossorigin="anonymous"></script>
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
             <style>
                 :root {
                     --bg-primary: #1a1a2e;
