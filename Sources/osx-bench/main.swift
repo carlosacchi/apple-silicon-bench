@@ -79,7 +79,8 @@ struct Run: AsyncParsableCommand {
 
         // Print final scores
         print("\n")
-        scores.printSummary()
+        let isPartialRun = parseSelectedBenchmarks() != nil
+        scores.printSummary(quickMode: quick, partialRun: isPartialRun)
     }
 
     private func parseSelectedBenchmarks() -> Set<BenchmarkType>? {

@@ -108,18 +108,26 @@ struct BenchmarkScores: Codable {
     let disk: Double
     let total: Double
 
-    func printSummary() {
+    func printSummary(quickMode: Bool = false, partialRun: Bool = false) {
         let line = String(repeating: "─", count: 44)
         print(line)
         print("  BENCHMARK SCORES")
         print(line)
-        print(dotPad("CPU Single-Core", Int(cpuSingleCore)))
-        print(dotPad("CPU Multi-Core", Int(cpuMultiCore)))
-        print(dotPad("Memory", Int(memory)))
-        print(dotPad("Disk", Int(disk)))
+        if cpuSingleCore > 0 { print(dotPad("CPU Single-Core", Int(cpuSingleCore))) }
+        if cpuMultiCore > 0 { print(dotPad("CPU Multi-Core", Int(cpuMultiCore))) }
+        if memory > 0 { print(dotPad("Memory", Int(memory))) }
+        if disk > 0 { print(dotPad("Disk", Int(disk))) }
         print(line)
         print(dotPad("TOTAL SCORE", Int(total)))
         print(line)
+
+        // Print notes about scoring accuracy
+        if quickMode {
+            print("  ⚠️  Quick mode: scores may be less accurate")
+        }
+        if partialRun {
+            print("  ℹ️  Partial run: total based on selected tests")
+        }
     }
 
     private func dotPad(_ label: String, _ value: Int) -> String {
@@ -135,12 +143,13 @@ struct BenchmarkScores: Codable {
 
 struct BenchmarkScorer {
     // Reference values (baseline = M1 base chip = 1000 points per category)
+    // Units MUST match the benchmark output units exactly
     private let referenceValues: [String: Double] = [
-        // CPU Single (ops/sec)
-        "integer": 500_000_000,
-        "float": 200_000_000,
-        "simd": 50_000_000_000,      // 50 GFLOPS
-        "crypto": 2_000,              // 2 GB/s
+        // CPU Single - units match benchmark output
+        "integer": 500,               // 500 Mops/s
+        "float": 200,                 // 200 Mops/s
+        "simd": 50,                   // 50 GFLOPS
+        "crypto": 2000,               // 2000 MB/s (~2 GB/s)
         "compression": 500,           // 500 MB/s
 
         // Memory (GB/s or ns)
@@ -150,8 +159,8 @@ struct BenchmarkScorer {
         "mem_latency": 100,           // 100 ns (lower is better)
 
         // Disk (MB/s or IOPS)
-        "disk_seq_read": 3000,        // 3 GB/s
-        "disk_seq_write": 2500,       // 2.5 GB/s
+        "disk_seq_read": 3000,        // 3000 MB/s
+        "disk_seq_write": 2500,       // 2500 MB/s
         "disk_rand_read": 300000,     // 300K IOPS
         "disk_rand_write": 250000,    // 250K IOPS
     ]
@@ -162,8 +171,30 @@ struct BenchmarkScorer {
         let memory = calculateMemoryScore(results)
         let disk = calculateDiskScore(results)
 
-        // Weighted total (CPU matters most)
-        let total = cpuSingle * 0.3 + cpuMulti * 0.3 + memory * 0.2 + disk * 0.2
+        // Weighted total - only include categories that were actually run
+        // This prevents partial runs (--only) from being unfairly penalized
+        var totalScore = 0.0
+        var totalWeight = 0.0
+
+        if cpuSingle > 0 {
+            totalScore += cpuSingle * 0.3
+            totalWeight += 0.3
+        }
+        if cpuMulti > 0 {
+            totalScore += cpuMulti * 0.3
+            totalWeight += 0.3
+        }
+        if memory > 0 {
+            totalScore += memory * 0.2
+            totalWeight += 0.2
+        }
+        if disk > 0 {
+            totalScore += disk * 0.2
+            totalWeight += 0.2
+        }
+
+        // Normalize to account for missing categories
+        let total = totalWeight > 0 ? totalScore / totalWeight : 0
 
         return BenchmarkScores(
             cpuSingleCore: cpuSingle,
@@ -181,6 +212,8 @@ struct BenchmarkScorer {
         var count = 0
 
         for test in result.tests {
+            // Skip failed tests (value <= 0) to avoid dragging down the average
+            guard test.value > 0 else { continue }
             if let reference = referenceValues[test.name.lowercased()] {
                 score += (test.value / reference) * 1000
                 count += 1
@@ -197,6 +230,8 @@ struct BenchmarkScorer {
         var count = 0
 
         for test in result.tests {
+            // Skip failed tests (value <= 0) to avoid dragging down the average
+            guard test.value > 0 else { continue }
             let baseName = test.name.lowercased().replacingOccurrences(of: "_multi", with: "")
             if let reference = referenceValues[baseName] {
                 // Multi-core reference is 8x single-core (for M1 8-core)
@@ -215,6 +250,8 @@ struct BenchmarkScorer {
         var count = 0
 
         for test in result.tests {
+            // Skip failed tests (value <= 0) to avoid dragging down the average
+            guard test.value > 0 else { continue }
             let key = "mem_\(test.name.lowercased())"
             if let reference = referenceValues[key] {
                 if test.higherIsBetter {
@@ -237,6 +274,8 @@ struct BenchmarkScorer {
         var count = 0
 
         for test in result.tests {
+            // Skip failed tests (value <= 0) to avoid dragging down the average
+            guard test.value > 0 else { continue }
             let key = "disk_\(test.name.lowercased().replacingOccurrences(of: " ", with: "_"))"
             if let reference = referenceValues[key] {
                 score += (test.value / reference) * 1000
