@@ -21,9 +21,9 @@ jobs:
     - name: Build
       run: swift build -c release
 
-    - name: Run Tests
-      run: swift test
-      continue-on-error: true
+    # Note: No tests yet - uncomment when test suite is added
+    # - name: Run Tests
+    #   run: swift test
 
     - name: Verify Binary
       run: |
