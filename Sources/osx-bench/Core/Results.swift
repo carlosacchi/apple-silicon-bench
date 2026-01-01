@@ -173,31 +173,32 @@ struct BenchmarkScores: Codable {
 struct BenchmarkScorer {
     // Reference values (baseline = M1 base chip = 1000 points per category)
     // Units MUST match the benchmark output units exactly
+    // Calibrated from real M1 benchmarks (10s duration, not quick mode)
     private let referenceValues: [String: Double] = [
-        // CPU Single - units match benchmark output
-        "integer": 500,               // 500 Mops/s
-        "float": 200,                 // 200 Mops/s
-        "simd": 50,                   // 50 GFLOPS
-        "crypto": 2000,               // 2000 MB/s (~2 GB/s)
-        "compression": 500,           // 500 MB/s
+        // CPU Single - calibrated from M1 base (10s tests)
+        "integer": 38,                // ~38 Mops/s on M1
+        "float": 32,                  // ~32 Mops/s on M1
+        "simd": 8,                    // ~8 GFLOPS on M1
+        "crypto": 1500,               // ~1500 MB/s on M1
+        "compression": 500,           // ~500 MB/s on M1
 
-        // Memory (GB/s or ns)
-        "mem_read": 60,               // 60 GB/s
-        "mem_write": 50,              // 50 GB/s
-        "mem_copy": 40,               // 40 GB/s
-        "mem_latency": 100,           // 100 ns (lower is better)
+        // Memory (GB/s or ns) - calibrated from M1 base
+        "mem_read": 1.5,              // ~1.5 GB/s on M1
+        "mem_write": 1.2,             // ~1.2 GB/s on M1
+        "mem_copy": 26,               // ~26 GB/s on M1
+        "mem_latency": 170,           // ~170 ns on M1 (lower is better)
 
-        // Disk (MB/s or IOPS)
-        "disk_seq_read": 3000,        // 3000 MB/s
-        "disk_seq_write": 2500,       // 2500 MB/s
-        "disk_rand_read": 300000,     // 300K IOPS
-        "disk_rand_write": 250000,    // 250K IOPS
+        // Disk (MB/s or IOPS) - calibrated from M1 base (SSD varies by model)
+        "disk_seq_read": 14000,       // ~14000 MB/s on M1 (quick mode)
+        "disk_seq_write": 1100,       // ~1100 MB/s on M1 (quick mode)
+        "disk_rand_read": 22000,      // ~22K IOPS on M1 (quick mode)
+        "disk_rand_write": 5700,      // ~5.7K IOPS on M1 (quick mode)
 
-        // GPU (GFLOPS, Mparts/s, MP/s) - M1 baseline
-        "gpu_compute": 140,           // ~140 GFLOPS matrix multiply
-        "gpu_particles": 900,         // ~900M particles/s
-        "gpu_blur": 1800,             // ~1800 MP/s
-        "gpu_edge": 5300,             // ~5300 MP/s
+        // GPU (GFLOPS, Mparts/s, MP/s) - calibrated from M1 base (quick mode)
+        "gpu_compute": 150,           // ~150 GFLOPS matrix multiply on M1
+        "gpu_particles": 290,         // ~290M particles/s on M1
+        "gpu_blur": 1700,             // ~1700 MP/s on M1
+        "gpu_edge": 4300,             // ~4300 MP/s on M1
     ]
 
     func calculateScores(from results: BenchmarkResults, coreCount: Int = 8) -> BenchmarkScores {
@@ -262,104 +263,81 @@ struct BenchmarkScorer {
 
     private func calculateCPUSingleScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .cpuSingleCore) else { return 0 }
-
-        var score = 0.0
-        var count = 0
-
-        for test in result.tests {
-            // Skip failed tests (value <= 0) to avoid dragging down the average
-            guard test.value > 0 else { continue }
-            if let reference = referenceValues[test.name.lowercased()] {
-                score += (test.value / reference) * 1000
-                count += 1
-            }
-        }
-
-        return count > 0 ? score / Double(count) : 0
+        return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "")
     }
 
     private func calculateCPUMultiScore(_ results: BenchmarkResults, coreCount: Int) -> Double {
         guard let result = results.result(for: .cpuMultiCore) else { return 0 }
 
-        var score = 0.0
+        // Multi-core: geometric mean with core-scaled references
+        // Baseline M1 = 8 cores, so we scale reference by actual core count
+        let coreScaleFactor = Double(coreCount) / 8.0
+        var logSum = 0.0
         var count = 0
 
         for test in result.tests {
-            // Skip failed tests (value <= 0) to avoid dragging down the average
             guard test.value > 0 else { continue }
             let baseName = test.name.lowercased().replacingOccurrences(of: "_multi", with: "")
             if let reference = referenceValues[baseName] {
-                // Multi-core reference scales with actual core count (baseline M1 = 8 cores)
-                // This normalizes scores so different core counts are comparable
-                let coreScaleFactor = Double(coreCount) / 8.0
-                score += (test.value / (reference * 8 * coreScaleFactor)) * 1000
+                // Reference for multi = single-core reference × 8 cores × scale factor
+                let multiReference = reference * 8 * coreScaleFactor
+                let ratio = test.value / multiReference
+                logSum += log(ratio)
                 count += 1
             }
         }
 
-        return count > 0 ? score / Double(count) : 0
+        guard count > 0 else { return 0 }
+        // Geometric mean of ratios, scaled to baseline 1000
+        return 1000 * exp(logSum / Double(count))
     }
 
     private func calculateMemoryScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .memory) else { return 0 }
-
-        var score = 0.0
-        var count = 0
-
-        for test in result.tests {
-            // Skip failed tests (value <= 0) to avoid dragging down the average
-            guard test.value > 0 else { continue }
-            let key = "mem_\(test.name.lowercased())"
-            if let reference = referenceValues[key] {
-                if test.higherIsBetter {
-                    score += (test.value / reference) * 1000
-                } else {
-                    // Lower is better (latency)
-                    score += (reference / test.value) * 1000
-                }
-                count += 1
-            }
-        }
-
-        return count > 0 ? score / Double(count) : 0
+        return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "mem_")
     }
 
     private func calculateDiskScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .disk) else { return 0 }
-
-        var score = 0.0
-        var count = 0
-
-        for test in result.tests {
-            // Skip failed tests (value <= 0) to avoid dragging down the average
-            guard test.value > 0 else { continue }
-            let key = "disk_\(test.name.lowercased().replacingOccurrences(of: " ", with: "_"))"
-            if let reference = referenceValues[key] {
-                score += (test.value / reference) * 1000
-                count += 1
-            }
-        }
-
-        return count > 0 ? score / Double(count) : 0
+        return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "disk_", transformKey: { $0.replacingOccurrences(of: " ", with: "_") })
     }
 
     private func calculateGPUScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .gpu) else { return 0 }
+        return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "gpu_")
+    }
 
-        var score = 0.0
+    // MARK: - Geometric Mean Helper
+
+    /// Calculates category score using geometric mean of ratios (more statistically sound than arithmetic mean)
+    /// Formula: Score = 1000 × exp(Σ wᵢ·ln(rᵢ) / Σ wᵢ) where rᵢ = value/baseline (or baseline/value for lower-is-better)
+    /// This prevents outliers from dominating and properly handles different units
+    private func calculateGeometricMeanScore(
+        tests: [TestResult],
+        keyPrefix: String,
+        transformKey: ((String) -> String)? = nil
+    ) -> Double {
+        var logSum = 0.0
         var count = 0
 
-        for test in result.tests {
-            // Skip failed tests (value <= 0) to avoid dragging down the average
+        for test in tests {
             guard test.value > 0 else { continue }
-            let key = "gpu_\(test.name.lowercased())"
+
+            let baseName = test.name.lowercased()
+            let transformedName = transformKey?(baseName) ?? baseName
+            let key = keyPrefix.isEmpty ? baseName : "\(keyPrefix)\(transformedName)"
+
             if let reference = referenceValues[key] {
-                score += (test.value / reference) * 1000
+                // Calculate ratio: higher-is-better uses value/reference, lower-is-better inverts
+                let ratio = test.higherIsBetter ? (test.value / reference) : (reference / test.value)
+                logSum += log(ratio)
                 count += 1
             }
         }
 
-        return count > 0 ? score / Double(count) : 0
+        guard count > 0 else { return 0 }
+        // Geometric mean of ratios, scaled to baseline 1000
+        return 1000 * exp(logSum / Double(count))
     }
 }
 

@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-01-01
+
+### Changed
+
+- **Scoring algorithm**: Switched from arithmetic mean to geometric mean of ratios
+  - Prevents outliers from dominating category scores
+  - Properly handles metrics with different units (GFLOPS, GB/s, ns)
+  - Lower-is-better metrics (latency) correctly inverted
+- Re-calibrated baseline reference values from real M1 measurements
+
+### Added
+
+- Documentation wiki in `docs/` folder:
+  - Scoring Methodology - detailed explanation of score calculation
+  - Benchmark Details - technical details of each test
+  - FAQ - common questions and troubleshooting
+
 ## [1.3.0] - 2026-01-01
 
 ### Added
@@ -220,6 +237,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[1.3.1]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.3.1
 [1.3.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.3.0
 [1.2.7]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.2.7
 [1.2.5]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.2.5

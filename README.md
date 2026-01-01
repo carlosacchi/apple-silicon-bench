@@ -228,6 +228,10 @@ Scores are normalized against a baseline (M1 base chip = 1000 points per categor
 
 Higher scores indicate better performance. An M1 chip scores approximately 1000 in each category.
 
+We use **geometric mean of ratios** for combining sub-tests, which properly handles different units and prevents outliers from dominating.
+
+For detailed methodology, see the [Scoring Methodology](docs/Scoring-Methodology.md) documentation.
+
 ## Supported Systems
 
 - **macOS**: 13.0 (Ventura) or later
