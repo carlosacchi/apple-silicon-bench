@@ -163,6 +163,16 @@ Same tests as single-core, executed in parallel across all CPU cores with effici
 | Rand Read | 4KB random read IOPS | IOPS |
 | Rand Write | 4KB random write IOPS | IOPS |
 
+**Test parameters:**
+
+| Parameter | Quick Mode | Full Mode |
+|-----------|------------|-----------|
+| Sequential file size | 128 MB | 512 MB |
+| Sequential chunk size | 4 MB | 4 MB |
+| Random file size | 256 MB | 256 MB |
+| Random block size | 4 KB | 4 KB |
+| Random operations | 1,000 | 5,000 |
+
 ### GPU (Metal)
 
 Native Metal compute benchmarks for Apple Silicon integrated GPUs.
