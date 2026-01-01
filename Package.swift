@@ -1,7 +1,7 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-let version = "1.3.0"
+let version = "1.2.6"
 
 let package = Package(
     name: "osx-bench",

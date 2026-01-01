@@ -264,9 +264,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### v1.2 - Extended System Info ✅
 - [x] Disk info (model, capacity, SSD/HDD type)
-- [ ] `osx-bench info --brief` vs `--extended` modes
-- [ ] GPU info (chip, VRAM, Metal version)
-- [ ] Battery info for MacBooks (cycle count, health)
+- [x] `osx-bench info --brief` vs `--extended` vs `--sensitive` modes
+- [x] GPU info (chip, core count, Metal version)
+- [x] Battery info for MacBooks (cycle count, health, charging status)
 
 ### v1.3 - GPU Benchmark (Metal)
 - [ ] Metal compute shaders benchmark
