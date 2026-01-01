@@ -47,7 +47,7 @@ struct Run: AsyncParsableCommand {
         print(line)
         print()
 
-        systemInfo.printSummary()
+        systemInfo.printBrief()
         print()
 
         // Determine test duration
@@ -117,8 +117,22 @@ struct Info: ParsableCommand {
         abstract: "Show system information"
     )
 
+    @Flag(name: .long, help: "Show extended system information (includes GPU, battery, disk details)")
+    var extended: Bool = false
+
+    @Flag(name: .long, help: "Show sensitive system information (includes Machine ID)")
+    var sensitive: Bool = false
+
     func run() throws {
         let systemInfo = try SystemInfo.gather()
-        systemInfo.printDetailed()
+        
+        if sensitive {
+            systemInfo.printSensitive()
+        } else if extended {
+            systemInfo.printExtended()
+        } else {
+            // Default to brief mode
+            systemInfo.printBrief()
+        }
     }
 }

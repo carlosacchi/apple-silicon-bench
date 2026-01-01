@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-01-02
+
+### Added
+
+- Extended system information with GPU and battery details
+- New `--extended` flag for detailed system info (GPU, battery, disk)
+- New `--sensitive` flag for Machine ID and other sensitive data
+- Default `--brief` mode for basic system information
+- GPU model, core count, and Metal version detection
+- Battery cycle count, health, and charging status (MacBooks only)
+
+### Changed
+
+- `osx-bench info` now defaults to brief mode (basic system info)
+- System info collection separated into privacy-conscious tiers
+
 ## [1.2.5] - 2026-01-01
 
 ### Security
@@ -188,6 +204,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [1.2.5]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.2.5
 [1.2.4]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.2.4
+[1.3.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.3.0
+[1.2.5]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.2.5
 [1.2.3]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.2.3
 [1.2.2]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.2.2
 [1.2.1]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.2.1

@@ -12,6 +12,12 @@ struct SystemInfo: Codable {
     let diskModel: String
     let diskCapacityGB: Int
     let diskType: String  // "SSD" or "HDD"
+    let gpuModel: String
+    let gpuCores: Int
+    let gpuMetalVersion: String
+    let batteryCycleCount: Int?
+    let batteryHealth: String?
+    let batteryChargingStatus: String?
 
     static func gather() throws -> SystemInfo {
         let machineId = getMachineId()
@@ -21,6 +27,8 @@ struct SystemInfo: Codable {
         let os = getOSVersion()
         let model = getModelIdentifier()
         let diskInfo = getDiskInfo()
+        let gpuInfo = getGPUInfo()
+        let batteryInfo = getBatteryInfo()
 
         return SystemInfo(
             machineId: machineId,
@@ -33,11 +41,17 @@ struct SystemInfo: Codable {
             modelIdentifier: model,
             diskModel: diskInfo.model,
             diskCapacityGB: diskInfo.capacityGB,
-            diskType: diskInfo.type
+            diskType: diskInfo.type,
+            gpuModel: gpuInfo.model,
+            gpuCores: gpuInfo.cores,
+            gpuMetalVersion: gpuInfo.metalVersion,
+            batteryCycleCount: batteryInfo.cycleCount,
+            batteryHealth: batteryInfo.health,
+            batteryChargingStatus: batteryInfo.chargingStatus
         )
     }
 
-    func printSummary() {
+    func printBrief() {
         let thermal = ThermalMonitor.currentState()
         let line = String(repeating: "─", count: 44)
         print(line)
@@ -51,12 +65,49 @@ struct SystemInfo: Codable {
         print(line)
     }
 
-    func printDetailed() {
+    func printExtended() {
         let diskSummary = "\(diskCapacityGB) GB \(diskType)"
         let line = String(repeating: "─", count: 50)
         print()
         print(line)
-        print("  System Information (Detailed)")
+        print("  System Information (Extended)")
+        print(line)
+        print(dotPad("Chip", chip, width: 50))
+        print(dotPad("P-Cores", String(coresPerformance), width: 50))
+        print(dotPad("E-Cores", String(coresEfficiency), width: 50))
+        print(dotPad("Total Cores", String(totalCores), width: 50))
+        print(dotPad("RAM", "\(ramGB) GB", width: 50))
+        print(dotPad("Disk", diskSummary, width: 50))
+        print(dotPad("Disk Model", diskModel, width: 50))
+        print(dotPad("macOS", osVersion, width: 50))
+        print(dotPad("Model", modelIdentifier, width: 50))
+        
+        // GPU Information
+        print(dotPad("GPU", gpuModel, width: 50))
+        print(dotPad("GPU Cores", String(gpuCores), width: 50))
+        print(dotPad("Metal", gpuMetalVersion, width: 50))
+        
+        // Battery Information (if available)
+        if let cycleCount = batteryCycleCount {
+            print(dotPad("Battery Cycles", String(cycleCount), width: 50))
+        }
+        if let health = batteryHealth {
+            print(dotPad("Battery Health", health, width: 50))
+        }
+        if let chargingStatus = batteryChargingStatus {
+            print(dotPad("Battery Status", chargingStatus, width: 50))
+        }
+        
+        print(line)
+        print()
+    }
+
+    func printSensitive() {
+        let diskSummary = "\(diskCapacityGB) GB \(diskType)"
+        let line = String(repeating: "─", count: 50)
+        print()
+        print(line)
+        print("  System Information (Sensitive - Includes Machine ID)")
         print(line)
         print(dotPad("Machine ID", machineId, width: 50))
         print(dotPad("Chip", chip, width: 50))
@@ -68,6 +119,23 @@ struct SystemInfo: Codable {
         print(dotPad("Disk Model", diskModel, width: 50))
         print(dotPad("macOS", osVersion, width: 50))
         print(dotPad("Model", modelIdentifier, width: 50))
+        
+        // GPU Information
+        print(dotPad("GPU", gpuModel, width: 50))
+        print(dotPad("GPU Cores", String(gpuCores), width: 50))
+        print(dotPad("Metal", gpuMetalVersion, width: 50))
+        
+        // Battery Information (if available)
+        if let cycleCount = batteryCycleCount {
+            print(dotPad("Battery Cycles", String(cycleCount), width: 50))
+        }
+        if let health = batteryHealth {
+            print(dotPad("Battery Health", health, width: 50))
+        }
+        if let chargingStatus = batteryChargingStatus {
+            print(dotPad("Battery Status", chargingStatus, width: 50))
+        }
+        
         print(line)
         print()
     }
@@ -81,6 +149,102 @@ struct SystemInfo: Codable {
     }
 
     // MARK: - Private Helpers
+
+    private static func getGPUInfo() -> (model: String, cores: Int, metalVersion: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
+        process.arguments = ["SPDisplaysDataType"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let output = String(data: data, encoding: .utf8) else {
+                return ("Unknown", 0, "Unknown")
+            }
+
+            var model = "Unknown"
+            var cores = 0
+            var metalVersion = "Unknown"
+
+            for line in output.components(separatedBy: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+                if trimmed.hasPrefix("Chipset Model:") {
+                    model = trimmed
+                        .replacingOccurrences(of: "Chipset Model:", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                } else if trimmed.hasPrefix("Total Number of Cores:") {
+                    let coresStr = trimmed
+                        .replacingOccurrences(of: "Total Number of Cores:", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                    if let coreCount = Int(coresStr) {
+                        cores = coreCount
+                    }
+                } else if trimmed.hasPrefix("Metal Support:") {
+                    metalVersion = trimmed
+                        .replacingOccurrences(of: "Metal Support:", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                }
+            }
+
+            return (model, cores, metalVersion)
+        } catch {
+            return ("Unknown", 0, "Unknown")
+        }
+    }
+
+    private static func getBatteryInfo() -> (cycleCount: Int?, health: String?, chargingStatus: String?) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
+        process.arguments = ["SPPowerDataType"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let output = String(data: data, encoding: .utf8) else {
+                return (nil, nil, nil)
+            }
+
+            var cycleCount: Int? = nil
+            var health: String? = nil
+            var chargingStatus: String? = nil
+
+            for line in output.components(separatedBy: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+                if trimmed.hasPrefix("Cycle Count:") {
+                    let countStr = trimmed
+                        .replacingOccurrences(of: "Cycle Count:", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                    if let count = Int(countStr) {
+                        cycleCount = count
+                    }
+                } else if trimmed.hasPrefix("Condition:") {
+                    health = trimmed
+                        .replacingOccurrences(of: "Condition:", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                } else if trimmed.hasPrefix("Charging:") {
+                    chargingStatus = trimmed
+                        .replacingOccurrences(of: "Charging:", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                }
+            }
+
+            return (cycleCount, health, chargingStatus)
+        } catch {
+            return (nil, nil, nil)
+        }
+    }
 
     private static func getMachineId() -> String {
         // Get or create a persistent machine ID
