@@ -225,6 +225,41 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## Comparison with Other Benchmark Tools
+
+| Feature | Apple Silicon Bench | Geekbench 6 | Cinebench 2024 | Blackmagic Disk Speed |
+|---------|---------------------|-------------|----------------|----------------------|
+| **Open Source** | Yes | No | No | No |
+| **Offline/Local** | Yes | Requires account | Yes | Yes |
+| **Transparent Scoring** | Yes, documented methodology | Closed algorithm | Closed algorithm | N/A (raw speeds) |
+| **macOS Native** | Swift + Accelerate | Cross-platform | Cross-platform | macOS native |
+| **Thermal Monitoring** | Yes, real-time | No | No | No |
+| **CPU Benchmark** | Yes | Yes | Yes | No |
+| **GPU Benchmark** | Planned (v1.3) | Yes | Yes (GPU variant) | No |
+| **Memory Benchmark** | Yes | Yes | No | No |
+| **Disk Benchmark** | Yes (cache bypass) | No | No | Yes |
+| **AI/ML Benchmark** | Planned (v1.4) | Yes (ML) | No | No |
+| **Power Monitoring** | Planned (v1.5) | No | No | No |
+| **Media Engine** | Planned (v1.6) | No | No | Yes (ProRes) |
+| **Real-World Workloads** | Planned (v1.7) | Synthetic only | Rendering only | I/O only |
+| **Price** | Free | $15 (Pro) | Free | Free |
+| **Binary Size** | ~2MB | ~200MB | ~1GB | ~10MB |
+
+### Why Apple Silicon Bench?
+
+1. **Transparency**: Know exactly what's being measured. Geekbench's "single-core score" is a black box.
+2. **No Cloud Required**: Your benchmarks stay on your machine. No accounts, no uploads.
+3. **Thermal Awareness**: See if your score dropped due to throttling, not slow hardware.
+4. **Focused**: Built specifically for Apple Silicon, not ported from x86.
+5. **Extensible**: Open source means you can add benchmarks relevant to your workflow.
+6. **Lightweight**: A 2MB binary vs gigabytes of downloads.
+
+### When to Use Other Tools
+
+- **Geekbench**: When you need cross-platform comparisons (Mac vs PC vs Phone)
+- **Cinebench**: When you specifically care about 3D rendering performance
+- **Blackmagic**: When you need ProRes-specific disk speed validation for video workflows
+
 ## Roadmap
 
 ### v1.2 - Extended System Info ✅
@@ -241,9 +276,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] Unified Memory bandwidth (CPU-GPU transfer)
 
 ### v1.4 - AI & Machine Learning
-- [ ] Neural Engine benchmark (CoreML inference)
-- [ ] MLX framework performance test
-- [ ] Image classification / object detection speed
+- [ ] Neural Engine benchmark (CoreML inference with bundled MobileNet ~500KB)
+- [ ] BNNS (Basic Neural Network Subroutines) operations
+- [ ] Image classification speed test
 
 ### v1.5 - Power & Efficiency
 - [ ] Real-time power consumption monitoring (Watts)
@@ -253,10 +288,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### v1.6 - Media Engine
 - [ ] ProRes encode/decode benchmark (VideoToolbox)
-- [ ] HEVC hardware encoding speed
-- [ ] Video transcoding performance
+- [ ] HEVC/H.264 hardware encoding speed (VideoToolbox)
+- [ ] Hardware decoder throughput test
 
-### v1.7 - Advanced Memory
+### v1.7 - Real-World Workloads
+- [ ] Swift project compile-time benchmark (requires Xcode on system)
+- [ ] Archive compression (Compression.framework: LZMA, LZ4, ZLIB)
+- [ ] JavaScriptCore parsing and execution benchmark
+- [ ] Mixed workload simulation (concurrent disk+memory+CPU operations)
+
+### v1.8 - Advanced Memory
 - [ ] Cache latency tests (L1, L2, L3 separately)
 - [ ] Memory bandwidth per core type (P-core vs E-core)
 - [ ] NUMA-aware memory access patterns
@@ -266,6 +307,44 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] Historical tracking of machine performance over time
 - [ ] USB/Thunderbolt bandwidth testing
 - [ ] Geekbench-compatible export format
+
+## Design Decisions
+
+### Why We Chose Native Frameworks Over External Dependencies
+
+A core principle of Apple Silicon Bench is staying **lightweight** (~2-5MB binary) while providing comprehensive benchmarks. This means we prefer macOS built-in frameworks over external dependencies.
+
+| Feature Request | Our Approach | Why Not the Alternative? |
+|-----------------|--------------|--------------------------|
+| **AI/ML Benchmark** | CoreML + BNNS | ❌ MLX requires Python/C++ runtime (~100MB+). BNNS is Apple's neural network primitives, built into macOS. |
+| **Video Transcoding** | VideoToolbox | ❌ FFmpeg adds ~80MB binary. VideoToolbox accesses the same hardware encoders (ProRes, HEVC, H.264) natively. |
+| **JavaScript Benchmark** | JavaScriptCore | ❌ V8/SpiderMonkey would add ~20MB+. JSC is Safari's engine, built into macOS. |
+| **Compile Benchmark** | Swift only | ❌ Rust toolchain is ~500MB. Swift/Xcode is commonly installed on dev Macs. |
+
+### What We Won't Add (and Why)
+
+| Feature | Reason |
+|---------|--------|
+| **MLX Framework Tests** | Requires separate Python environment, not self-contained |
+| **Rust/Go/C++ Compile Tests** | Would require users to install additional toolchains |
+| **FFmpeg Transcoding** | 80MB dependency for something VideoToolbox does natively |
+| **Chrome/V8 JavaScript** | Massive dependency; JavaScriptCore provides equivalent browser-style workload |
+| **CUDA/OpenCL Tests** | Not relevant for Apple Silicon (Metal is the native GPU API) |
+
+### Trade-offs We Accept
+
+1. **CoreML Model Size**: We bundle a small MobileNet model (~500KB) for Neural Engine benchmarks. This slightly increases binary size but enables ANE testing without network downloads.
+
+2. **Xcode Requirement for Compile Benchmark**: The Swift compile benchmark requires Xcode to be installed. We detect this at runtime and skip gracefully if unavailable.
+
+3. **Power Monitoring Limitations**: Real power consumption requires IOKit entitlements that may not work on all Mac configurations. We provide best-effort monitoring with clear disclaimers.
+
+### Community-Requested Features Under Consideration
+
+Have a benchmark idea? [Open an issue](https://github.com/carlosacchi/apple-silicon-bench/issues) with:
+- What you want to measure
+- Why it's useful for Apple Silicon users
+- Suggested implementation approach (ideally using macOS native frameworks)
 
 ## Keywords
 
