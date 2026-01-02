@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-01-02
+
+### Added
+
+- **NovaBench-compatible disk benchmark patterns** for improved comparability
+  - Sequential I/O: 4MB blocks with cache bypass
+  - Random I/O: 4KB blocks, QD1 (single operation) pattern
+  - Matches industry-standard benchmark methodology
+
+### Changed
+
+- **Disk benchmark output**: All tests now report MB/s consistently
+  - Random tests converted from IOPS to MB/s (IOPS × 4KB / 1MB)
+  - Enables direct comparison with NovaBench and other tools
+- **Baseline values updated** to NovaBench M1 reference measurements:
+  - Seq Read: 3356 MB/s, Seq Write: 3279 MB/s
+  - Rand Read: 166 MB/s, Rand Write: 761 MB/s
+- Increased quick mode file size to 256MB (was 128MB) for more stable results
+- Sequential tests now sync file before reading (F_FULLFSYNC)
+
+### Technical Details
+
+- Sequential: 4MB blocks, cache bypass via `F_NOCACHE`, sync via `F_FULLFSYNC`
+- Random: 4KB blocks, QD1 pattern (one I/O at a time), cache bypass
+
 ## [1.3.2] - 2026-01-02
 
 ### Changed
@@ -262,6 +287,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[1.4.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.4.0
 [1.3.2]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.3.2
 [1.3.1]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.3.1
 [1.3.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.3.0

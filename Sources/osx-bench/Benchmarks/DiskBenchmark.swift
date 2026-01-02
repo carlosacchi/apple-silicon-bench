@@ -6,9 +6,13 @@ struct DiskBenchmark: Benchmark {
     let quickMode: Bool
 
     private let testDir: URL
-    private var sequentialSize: Int { quickMode ? 128 * 1024 * 1024 : 512 * 1024 * 1024 }  // 128MB quick, 512MB full
-    private let randomBlockSize = 4096  // 4 KB
-    private var randomOperations: Int { quickMode ? 1000 : 5000 }
+    // NovaBench-compatible parameters:
+    // - Sequential: 4MB blocks (NovaBench uses up to 8 simultaneous, we use single-threaded for stability)
+    // - Random: 4KB blocks, QD1 (single operation)
+    private let sequentialBlockSize = 4 * 1024 * 1024  // 4 MB (NovaBench standard)
+    private var sequentialSize: Int { quickMode ? 256 * 1024 * 1024 : 512 * 1024 * 1024 }  // 256MB quick, 512MB full
+    private let randomBlockSize = 4096  // 4 KB (NovaBench standard)
+    private var randomOperations: Int { quickMode ? 500 : 2000 }
 
     init(duration: Int, quickMode: Bool = false) {
         self.duration = duration
@@ -27,29 +31,32 @@ struct DiskBenchmark: Benchmark {
         var results: [TestResult] = []
         let testDuration = Double(duration) / 4.0  // Divide duration among 4 tests
 
-        // Sequential Write
+        // Sequential Write (4MB blocks)
         let seqWriteResult = try measureForDuration(seconds: testDuration) {
             try runSequentialWriteTest()
         }
         results.append(TestResult(name: "Seq_Write", value: seqWriteResult, unit: "MB/s"))
 
-        // Sequential Read
+        // Sequential Read (4MB blocks)
         let seqReadResult = try measureForDuration(seconds: testDuration) {
             try runSequentialReadTest()
         }
         results.append(TestResult(name: "Seq_Read", value: seqReadResult, unit: "MB/s"))
 
-        // Random Write IOPS
+        // Random Write (4KB blocks, QD1)
         let randWriteResult = try measureForDuration(seconds: testDuration) {
             try runRandomWriteTest()
         }
-        results.append(TestResult(name: "Rand_Write", value: randWriteResult, unit: "IOPS"))
+        // Output MB/s for consistency with NovaBench
+        let randWriteMBps = (randWriteResult * Double(randomBlockSize)) / (1024 * 1024)
+        results.append(TestResult(name: "Rand_Write", value: randWriteMBps, unit: "MB/s"))
 
-        // Random Read IOPS
+        // Random Read (4KB blocks, QD1)
         let randReadResult = try measureForDuration(seconds: testDuration) {
             try runRandomReadTest()
         }
-        results.append(TestResult(name: "Rand_Read", value: randReadResult, unit: "IOPS"))
+        let randReadMBps = (randReadResult * Double(randomBlockSize)) / (1024 * 1024)
+        results.append(TestResult(name: "Rand_Read", value: randReadMBps, unit: "MB/s"))
 
         return results
     }
@@ -72,14 +79,15 @@ struct DiskBenchmark: Benchmark {
     }
 
     // MARK: - Sequential Write Test
+    /// NovaBench-compatible: 4MB blocks, cache bypass
     private func runSequentialWriteTest() throws -> Double {
-        let filePath = testDir.appendingPathComponent("seq_write_test")
+        let filePath = testDir.appendingPathComponent("seq_write_test_\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: filePath) }
 
-        let chunkSize = 4 * 1024 * 1024  // 4 MB chunks
-        var chunk = Data(count: chunkSize)
+        // Prepare random data (4MB chunk)
+        var chunk = Data(count: sequentialBlockSize)
         chunk.withUnsafeMutableBytes { ptr in
-            arc4random_buf(ptr.baseAddress!, chunkSize)
+            arc4random_buf(ptr.baseAddress!, sequentialBlockSize)
         }
 
         // Use O_NOFOLLOW to prevent symlink attacks, 0o600 for owner-only access
@@ -87,6 +95,7 @@ struct DiskBenchmark: Benchmark {
         guard fd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
         defer { close(fd) }
 
+        // Bypass filesystem cache for accurate measurement
         _ = fcntl(fd, F_NOCACHE, 1)
 
         let start = CFAbsoluteTimeGetCurrent()
@@ -94,12 +103,13 @@ struct DiskBenchmark: Benchmark {
         var bytesWritten = 0
         while bytesWritten < sequentialSize {
             let result = chunk.withUnsafeBytes { ptr in
-                write(fd, ptr.baseAddress!, chunkSize)
+                write(fd, ptr.baseAddress!, sequentialBlockSize)
             }
             if result < 0 { break }
             bytesWritten += result
         }
 
+        // Force sync to disk
         _ = fcntl(fd, F_FULLFSYNC)
 
         let duration = CFAbsoluteTimeGetCurrent() - start
@@ -108,13 +118,14 @@ struct DiskBenchmark: Benchmark {
     }
 
     // MARK: - Sequential Read Test
+    /// NovaBench-compatible: 4MB blocks, cache bypass
     private func runSequentialReadTest() throws -> Double {
-        let filePath = testDir.appendingPathComponent("seq_read_test")
+        let filePath = testDir.appendingPathComponent("seq_read_test_\(UUID().uuidString)")
 
-        let chunkSize = 4 * 1024 * 1024
-        var chunk = Data(count: chunkSize)
+        // First, create the test file
+        var chunk = Data(count: sequentialBlockSize)
         chunk.withUnsafeMutableBytes { ptr in
-            arc4random_buf(ptr.baseAddress!, chunkSize)
+            arc4random_buf(ptr.baseAddress!, sequentialBlockSize)
         }
 
         let writefd = open(filePath.path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0o600)
@@ -123,28 +134,31 @@ struct DiskBenchmark: Benchmark {
         var written = 0
         while written < sequentialSize {
             let result = chunk.withUnsafeBytes { ptr in
-                write(writefd, ptr.baseAddress!, chunkSize)
+                write(writefd, ptr.baseAddress!, sequentialBlockSize)
             }
             if result < 0 { break }
             written += result
         }
+        // Sync and close write fd
+        _ = fcntl(writefd, F_FULLFSYNC)
         close(writefd)
 
         defer { try? FileManager.default.removeItem(at: filePath) }
 
+        // Open for reading with cache bypass
         let fd = open(filePath.path, O_RDONLY | O_NOFOLLOW)
         guard fd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
         defer { close(fd) }
 
         _ = fcntl(fd, F_NOCACHE, 1)
 
-        var readBuffer = [UInt8](repeating: 0, count: chunkSize)
+        var readBuffer = [UInt8](repeating: 0, count: sequentialBlockSize)
 
         let start = CFAbsoluteTimeGetCurrent()
 
         var bytesRead = 0
         while bytesRead < sequentialSize {
-            let result = read(fd, &readBuffer, chunkSize)
+            let result = read(fd, &readBuffer, sequentialBlockSize)
             if result <= 0 { break }
             bytesRead += result
         }
@@ -154,9 +168,10 @@ struct DiskBenchmark: Benchmark {
         return Double(bytesRead) / duration / (1024 * 1024)
     }
 
-    // MARK: - Random Write IOPS
+    // MARK: - Random Write (QD1)
+    /// NovaBench-compatible: 4KB blocks, one operation at a time with sync
     private func runRandomWriteTest() throws -> Double {
-        let filePath = testDir.appendingPathComponent("rand_write_test")
+        let filePath = testDir.appendingPathComponent("rand_write_test_\(UUID().uuidString)")
 
         let fileSize = 256 * 1024 * 1024  // 256 MB sparse file
         let fd = open(filePath.path, O_RDWR | O_CREAT | O_TRUNC | O_NOFOLLOW, 0o600)
@@ -177,6 +192,7 @@ struct DiskBenchmark: Benchmark {
 
         let start = CFAbsoluteTimeGetCurrent()
 
+        // QD1: One operation at a time
         for _ in 0..<randomOperations {
             let blockIndex = Int(arc4random_uniform(UInt32(blockAlignedMax)))
             let offset = off_t(blockIndex * randomBlockSize)
@@ -184,16 +200,18 @@ struct DiskBenchmark: Benchmark {
             _ = write(fd, &block, randomBlockSize)
         }
 
+        // Final sync (not per-operation - that's too slow and not what NovaBench does)
         _ = fcntl(fd, F_FULLFSYNC)
 
         let duration = CFAbsoluteTimeGetCurrent() - start
 
-        return Double(randomOperations) / duration
+        return Double(randomOperations) / duration  // Returns IOPS, converted to MB/s in caller
     }
 
-    // MARK: - Random Read IOPS
+    // MARK: - Random Read (QD1)
+    /// NovaBench-compatible: 4KB blocks, one operation at a time
     private func runRandomReadTest() throws -> Double {
-        let filePath = testDir.appendingPathComponent("rand_read_test")
+        let filePath = testDir.appendingPathComponent("rand_read_test_\(UUID().uuidString)")
 
         let fileSize = 256 * 1024 * 1024  // 256 MB
         let chunkSize = 4 * 1024 * 1024
@@ -208,6 +226,7 @@ struct DiskBenchmark: Benchmark {
             if result < 0 { break }
             written += result
         }
+        _ = fcntl(writefd, F_FULLFSYNC)
         close(writefd)
 
         defer { try? FileManager.default.removeItem(at: filePath) }
@@ -224,6 +243,7 @@ struct DiskBenchmark: Benchmark {
 
         let start = CFAbsoluteTimeGetCurrent()
 
+        // QD1: One operation at a time
         for _ in 0..<randomOperations {
             let blockIndex = Int(arc4random_uniform(UInt32(blockAlignedMax)))
             let offset = off_t(blockIndex * randomBlockSize)
@@ -233,7 +253,7 @@ struct DiskBenchmark: Benchmark {
 
         let duration = CFAbsoluteTimeGetCurrent() - start
 
-        return Double(randomOperations) / duration
+        return Double(randomOperations) / duration  // Returns IOPS, converted to MB/s in caller
     }
 }
 
