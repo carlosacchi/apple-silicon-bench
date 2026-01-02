@@ -68,16 +68,18 @@ osx-bench run --export results.json
 
 ## Scoring
 
-- **Baseline**: M1 base chip = 1000 points per category
-- **Method**: Geometric mean of ratios (industry standard)
+- **Baseline**: M1 base chip = 1000 points per category (calibrated from median of 5 full runs)
+- **Method**: Geometric mean of ratios (commonly used in benchmark suites)
 - **Weights**: CPU-Single 25%, CPU-Multi 25%, Memory 15%, Disk 15%, GPU 20%
 
-| Chip | Expected Score |
+| Chip | Expected Score (Rule-of-Thumb) |
 |------|----------------|
 | M1 | ~1000 |
 | M2 | ~1100 |
 | M3 | ~1290 |
 | M4 | ~1600 |
+
+*Note: Actual results may vary based on chassis, cooling, and configuration*
 
 For detailed methodology, see the [Wiki](https://github.com/carlosacchi/apple-silicon-bench/wiki).
 
