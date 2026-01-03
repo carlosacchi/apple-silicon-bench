@@ -64,6 +64,9 @@ osx-bench run --only ai
 osx-bench run --only ai --model-path /path/to/model.mlmodelc
 osx-bench run --offline  # Skip AI if model not cached
 
+# Advanced profiling (v2.1.0+)
+osx-bench run --advanced  # Stride sweep, QD matrix, thread scaling
+
 # System info
 osx-bench info
 osx-bench info --extended
@@ -114,6 +117,7 @@ For detailed methodology, see the [Wiki](https://github.com/carlosacchi/apple-si
 See the **[Wiki](https://github.com/carlosacchi/apple-silicon-bench/wiki)** for:
 - [Scoring Methodology](https://github.com/carlosacchi/apple-silicon-bench/wiki/Scoring-Methodology) - How scores are calculated
 - [Benchmark Details](https://github.com/carlosacchi/apple-silicon-bench/wiki/Benchmark-Details) - Technical details of each test
+- [Advanced Profiling](https://github.com/carlosacchi/apple-silicon-bench/wiki/Advanced-Profiling) - PassMark-inspired deep analysis
 - [FAQ](https://github.com/carlosacchi/apple-silicon-bench/wiki/FAQ) - Common questions and troubleshooting
 - [Roadmap](https://github.com/carlosacchi/apple-silicon-bench/wiki/Roadmap) - Planned features
 

@@ -14,9 +14,49 @@ struct ConsentManager {
         consentDirectory.appendingPathComponent(consentFileName)
     }
 
-    /// Check if user has already accepted the privacy policy
+    /// Extract MAJOR.MINOR from a semantic version string (e.g., "2.1.0" -> "2.1")
+    private static func majorMinor(from version: String) -> String {
+        let components = version.split(separator: ".")
+        guard components.count >= 2 else { return version }
+        return "\(components[0]).\(components[1])"
+    }
+
+    /// Read the version from the stored consent file
+    private static func storedConsentVersion() -> String? {
+        guard FileManager.default.fileExists(atPath: consentFilePath.path) else {
+            return nil
+        }
+
+        do {
+            let content = try String(contentsOf: consentFilePath, encoding: .utf8)
+            // Parse "Version: X.Y.Z" line
+            for line in content.components(separatedBy: .newlines) {
+                if line.hasPrefix("Version:") {
+                    let version = line
+                        .replacingOccurrences(of: "Version:", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                    return version
+                }
+            }
+        } catch {
+            // If we can't read the file, treat as no consent
+        }
+        return nil
+    }
+
+    /// Check if user has already accepted the privacy policy for current MAJOR.MINOR version
+    /// Re-ask consent on MAJOR or MINOR version upgrades (not PATCH)
     static func hasAcceptedPrivacyPolicy() -> Bool {
-        FileManager.default.fileExists(atPath: consentFilePath.path)
+        guard let storedVersion = storedConsentVersion() else {
+            return false
+        }
+
+        let storedMajorMinor = majorMinor(from: storedVersion)
+        let currentMajorMinor = majorMinor(from: AppInfo.version)
+
+        // Same MAJOR.MINOR = consent still valid
+        // Different MAJOR.MINOR = re-ask consent
+        return storedMajorMinor == currentMajorMinor
     }
 
     /// Record that user has accepted the privacy policy

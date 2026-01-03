@@ -39,6 +39,9 @@ struct Run: AsyncParsableCommand {
     @Flag(name: .long, help: "Skip AI benchmark if model not cached (no download)")
     var offline: Bool = false
 
+    @Flag(name: .long, help: "Run advanced profiling (memory stride/block sweep, disk QD matrix, CPU scaling)")
+    var advanced: Bool = false
+
     func run() async throws {
         // Check privacy policy consent on first run
         guard ConsentManager.ensureConsent() else {
@@ -77,12 +80,24 @@ struct Run: AsyncParsableCommand {
 
         let results = try await runner.runAll()
 
+        // Run advanced profiling if requested
+        var advancedResults: AdvancedProfileResults? = nil
+        if advanced {
+            print("\n▶ Running Advanced Profiling...")
+            advancedResults = try await runAdvancedProfiles(systemInfo: systemInfo, duration: testDuration)
+        }
+
         // Calculate scores (pass core count for proper multi-core normalization)
         let scorer = BenchmarkScorer()
         let scores = scorer.calculateScores(from: results, coreCount: systemInfo.totalCores)
 
         // Generate HTML report
-        let reportGenerator = HTMLReportGenerator(systemInfo: systemInfo, results: results, scores: scores)
+        let reportGenerator = HTMLReportGenerator(
+            systemInfo: systemInfo,
+            results: results,
+            scores: scores,
+            advancedResults: advancedResults
+        )
         let reportPath = try reportGenerator.generate()
         print("\n📊 Report saved to: \(reportPath)")
 
@@ -125,6 +140,71 @@ struct Run: AsyncParsableCommand {
         } else {
             return 10  // Default: 10 seconds per test
         }
+    }
+
+    private func runAdvancedProfiles(systemInfo: SystemInfo, duration: Int) async throws -> AdvancedProfileResults {
+        // Memory Profile
+        print("\n  Memory Profile")
+        let memoryProfile = MemoryProfile(duration: duration, quickMode: quick)
+        let memoryResult = try await memoryProfile.run()
+
+        // Disk Profile
+        print("\n  Disk Profile")
+        let diskProfile = DiskProfile(duration: duration, quickMode: quick)
+        let diskResult = try await diskProfile.run()
+
+        // CPU Scaling Profile
+        print("\n  CPU Scaling Profile")
+        let cpuProfile = CPUScalingProfile(duration: duration, maxCores: systemInfo.totalCores, quickMode: quick)
+        let cpuResult = try await cpuProfile.run()
+
+        // Print summary
+        printAdvancedSummary(memory: memoryResult, disk: diskResult, cpu: cpuResult)
+
+        return AdvancedProfileResults(
+            memory: memoryResult,
+            disk: diskResult,
+            cpuScaling: cpuResult
+        )
+    }
+
+    private func printAdvancedSummary(memory: MemoryProfileResult, disk: DiskProfileResult, cpu: CPUScalingResult) {
+        let line = String(repeating: "─", count: 50)
+
+        print()
+        print(line)
+        print("  ADVANCED PROFILE SUMMARY")
+        print(line)
+
+        // Memory
+        print("  Memory:")
+        if let best = memory.strideSweep.first {
+            print("    Peak stride throughput .... \(String(format: "%.1f", best.gbps)) GB/s @ \(best.stride)B")
+        }
+        if !memory.detectedCacheBoundaries.isEmpty {
+            print("    Cache boundaries detected:")
+            for boundary in memory.detectedCacheBoundaries {
+                print("      • \(boundary)")
+            }
+        }
+
+        // Disk
+        print("  Disk:")
+        print("    Optimal Read QD ........... \(disk.optimalReadQD)")
+        print("    Optimal Write QD .......... \(disk.optimalWriteQD)")
+        print("    Peak Read IOPS ............ \(String(format: "%.0f", disk.peakReadIOPS))")
+        print("    Peak Write IOPS ........... \(String(format: "%.0f", disk.peakWriteIOPS))")
+
+        // CPU
+        print("  CPU Scaling:")
+        print("    Scaling Efficiency ........ \(String(format: "%.1f", cpu.scalingEfficiency))%")
+        if let cliff = cpu.scalingCliff {
+            print("    Scaling cliff at .......... \(cliff) threads")
+        } else {
+            print("    Scaling cliff ............. None detected")
+        }
+
+        print(line)
     }
 }
 

@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-01-03
+
+### Added
+
+- **Advanced Profiling Mode** (`--advanced` flag)
+  - Memory Profile: stride sweep + block-size sweep for cache boundary detection
+  - Disk Profile: Queue Depth (QD) matrix for parallelism analysis
+  - CPU Scaling: thread sweep for efficiency metric
+  - Inspired by PassMark methodology
+- **Version-aware Privacy Consent**
+  - Consent now stored with version number
+  - Re-asks consent on MINOR or MAJOR version upgrades
+  - PATCH upgrades do not re-ask (same MAJOR.MINOR = consent valid)
+- New wiki page: Advanced Profiling methodology documentation
+
+### Changed
+
+- HTML report now includes Advanced Profiling section with detailed tables
+- CLI shows advanced profile summary with cache boundaries, optimal QD, scaling efficiency
+
+### Technical Details
+
+- Memory stride sweep: 8B to 4KB strides to stress spatial locality
+- Memory block-size sweep: 4KB to 128MB to detect L1/L2/L3/DRAM transitions
+- Disk QD matrix: QD1 to QD32 for read/write IOPS analysis
+- CPU thread sweep: 1 to max cores for scaling efficiency calculation
+- Scaling efficiency = (actual throughput) / (single-thread × thread count) × 100%
+
 ## [2.0.3] - 2026-01-04
 
 ### Fixed
@@ -380,6 +408,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[2.1.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.0
 [2.0.3]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.0.3
 [2.0.2]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.0.2
 [2.0.1]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.0.1
