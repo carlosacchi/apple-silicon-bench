@@ -18,7 +18,7 @@ struct Run: AsyncParsableCommand {
         abstract: "Run benchmarks"
     )
 
-    @Option(name: .long, help: "Run only specific benchmarks (cpu-single,cpu-multi,memory,disk,gpu)")
+    @Option(name: .long, help: "Run only specific benchmarks (cpu-single,cpu-multi,memory,disk,gpu,ai)")
     var only: String?
 
     @Flag(name: .long, help: "Quick mode with reduced iterations (~3s per test)")
@@ -33,7 +33,18 @@ struct Run: AsyncParsableCommand {
     @Option(name: .long, help: "Export results to JSON file")
     var export: String?
 
+    @Option(name: .long, help: "Path to custom CoreML model for AI benchmark")
+    var modelPath: String?
+
+    @Flag(name: .long, help: "Skip AI benchmark if model not cached (no download)")
+    var offline: Bool = false
+
     func run() async throws {
+        // Check privacy policy consent on first run
+        guard ConsentManager.ensureConsent() else {
+            throw ExitCode.failure
+        }
+
         let systemInfo = try SystemInfo.gather()
 
         let title = "\(AppInfo.fullName.uppercased()) v\(AppInfo.version)"
@@ -53,11 +64,15 @@ struct Run: AsyncParsableCommand {
         // Determine test duration
         let testDuration = calculateDuration()
 
+        // Create model manager for AI benchmark
+        let modelManager = ModelManager(customModelPath: modelPath, offlineMode: offline)
+
         let runner = BenchmarkRunner(
             systemInfo: systemInfo,
             quickMode: quick,
             duration: testDuration,
-            selectedBenchmarks: parseSelectedBenchmarks()
+            selectedBenchmarks: parseSelectedBenchmarks(),
+            modelManager: modelManager
         )
 
         let results = try await runner.runAll()
@@ -92,6 +107,7 @@ struct Run: AsyncParsableCommand {
             case "memory", "ram": return .memory
             case "disk", "storage": return .disk
             case "gpu", "metal": return .gpu
+            case "ai", "ml", "neural", "coreml": return .ai
             default: return nil
             }
         }

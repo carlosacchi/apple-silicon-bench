@@ -8,6 +8,7 @@ enum BenchmarkType: String, CaseIterable, Codable {
     case memory = "memory"
     case disk = "disk"
     case gpu = "gpu"
+    case ai = "ai"
 
     var displayName: String {
         switch self {
@@ -16,6 +17,7 @@ enum BenchmarkType: String, CaseIterable, Codable {
         case .memory: return "Memory"
         case .disk: return "Disk"
         case .gpu: return "GPU"
+        case .ai: return "AI/ML"
         }
     }
 }
@@ -110,26 +112,32 @@ struct BenchmarkScores: Codable {
     let disk: Double
     let gpu: Double
     let total: Double
+    // AI score is SEPARATE from total (like Geekbench AI)
+    let ai: Double
     // Track which benchmarks were run (vs skipped via --only)
     let ranCpuSingle: Bool
     let ranCpuMulti: Bool
     let ranMemory: Bool
     let ranDisk: Bool
     let ranGpu: Bool
+    let ranAi: Bool
 
     init(cpuSingleCore: Double, cpuMultiCore: Double, memory: Double, disk: Double, gpu: Double, total: Double,
-         ranCpuSingle: Bool = false, ranCpuMulti: Bool = false, ranMemory: Bool = false, ranDisk: Bool = false, ranGpu: Bool = false) {
+         ai: Double = 0, ranCpuSingle: Bool = false, ranCpuMulti: Bool = false, ranMemory: Bool = false,
+         ranDisk: Bool = false, ranGpu: Bool = false, ranAi: Bool = false) {
         self.cpuSingleCore = cpuSingleCore
         self.cpuMultiCore = cpuMultiCore
         self.memory = memory
         self.disk = disk
         self.gpu = gpu
         self.total = total
+        self.ai = ai
         self.ranCpuSingle = ranCpuSingle
         self.ranCpuMulti = ranCpuMulti
         self.ranMemory = ranMemory
         self.ranDisk = ranDisk
         self.ranGpu = ranGpu
+        self.ranAi = ranAi
     }
 
     func printSummary(quickMode: Bool = false, partialRun: Bool = false) {
@@ -146,6 +154,16 @@ struct BenchmarkScores: Codable {
         print(line)
         print(dotPad("TOTAL SCORE", formatScore(total)))
         print(line)
+
+        // Print AI score separately (like Geekbench AI)
+        if ranAi {
+            print()
+            print(line)
+            print("  AI/ML SCORE (Separate)")
+            print(line)
+            print(dotPad("AI Score", formatScore(ai)))
+            print(line)
+        }
 
         // Print notes about scoring accuracy
         if quickMode {
@@ -216,6 +234,14 @@ struct BenchmarkScorer {
         "gpu_particles": 909.74,      // 909.74 Mparts/s on M1
         "gpu_blur": 1870,             // 1870 MP/s on M1
         "gpu_edge": 5410,             // 5410 MP/s on M1
+
+        // AI/ML benchmarks - M1 baseline (IPS and GFLOPS)
+        // These are placeholder values - will be calibrated from real M1 runs
+        // after the CoreML model is set up
+        "ai_cpu": 45.0,               // ~45 IPS CoreML CPU-only on M1
+        "ai_gpu": 180.0,              // ~180 IPS CoreML GPU on M1
+        "ai_neural engine": 350.0,    // ~350 IPS CoreML Neural Engine on M1
+        "ai_bnns": 25.0,              // ~25 GFLOPS BNNS matmul on M1
     ]
 
     func calculateScores(from results: BenchmarkResults, coreCount: Int = 8) -> BenchmarkScores {
@@ -225,17 +251,21 @@ struct BenchmarkScorer {
         let ranMemory = results.result(for: .memory) != nil
         let ranDisk = results.result(for: .disk) != nil
         let ranGpu = results.result(for: .gpu) != nil
+        let ranAi = results.result(for: .ai) != nil
 
         let cpuSingle = calculateCPUSingleScore(results)
         let cpuMulti = calculateCPUMultiScore(results, coreCount: coreCount)
         let memory = calculateMemoryScore(results)
         let disk = calculateDiskScore(results)
         let gpu = calculateGPUScore(results)
+        // AI score is calculated separately and NOT included in total
+        let ai = calculateAIScore(results)
 
         // Weighted total - include categories that were run (even if score is 0 = failed)
         // This prevents partial runs (--only) from being unfairly penalized
         // but still penalizes failures appropriately
         // Weights: CPU-Single 25%, CPU-Multi 25%, Memory 15%, Disk 15%, GPU 20%
+        // NOTE: AI is NOT included in total (separate score like Geekbench AI)
         var totalScore = 0.0
         var totalWeight = 0.0
 
@@ -270,11 +300,13 @@ struct BenchmarkScorer {
             disk: disk,
             gpu: gpu,
             total: total,
+            ai: ai,
             ranCpuSingle: ranCpuSingle,
             ranCpuMulti: ranCpuMulti,
             ranMemory: ranMemory,
             ranDisk: ranDisk,
-            ranGpu: ranGpu
+            ranGpu: ranGpu,
+            ranAi: ranAi
         )
     }
 
@@ -313,6 +345,13 @@ struct BenchmarkScorer {
     private func calculateGPUScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .gpu) else { return 0 }
         return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "gpu_")
+    }
+
+    private func calculateAIScore(_ results: BenchmarkResults) -> Double {
+        guard let result = results.result(for: .ai) else { return 0 }
+        // AI tests: CPU, GPU, Neural Engine (IPS), BNNS (GFLOPS)
+        // Use geometric mean with "ai_" prefix
+        return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "ai_")
     }
 
     // MARK: - Geometric Mean Helper

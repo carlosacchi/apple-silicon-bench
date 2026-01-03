@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-macOS-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org/)
 
-A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors. Compare your M1, M2, M3, M4, M5 (and future chips) performance with comprehensive CPU, GPU, memory, and disk benchmarks.
+A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors. Compare your M1, M2, M3, M4, M5 (and future chips) performance with comprehensive CPU, GPU, memory, disk, and AI benchmarks.
 
 ## Features
 
@@ -15,6 +15,7 @@ A lightweight, native Swift benchmark tool designed specifically for Apple Silic
 - **GPU Benchmark (Metal)**: Compute shaders, particle simulation, image processing
 - **Memory Benchmark**: Bandwidth and latency measurements
 - **Disk Benchmark**: Sequential and random I/O with cache bypass
+- **AI/ML Benchmark (NEW in v2.0)**: CoreML inference (CPU/GPU/Neural Engine), BNNS operations
 - **Thermal Monitoring**: Real-time throttling detection
 - **HTML Reports**: Beautiful interactive reports saved to Desktop
 - **Lightweight**: ~2MB standalone binary, no dependencies
@@ -57,6 +58,11 @@ osx-bench run --stress
 # Selective benchmarks
 osx-bench run --only cpu-single,gpu
 osx-bench run --only memory,disk
+osx-bench run --only ai
+
+# AI benchmark options
+osx-bench run --only ai --model-path /path/to/model.mlmodelc
+osx-bench run --offline  # Skip AI if model not cached
 
 # System info
 osx-bench info
@@ -68,6 +74,7 @@ osx-bench run --export results.json
 
 ## Scoring
 
+### Total Score
 - **Baseline**: M1 base chip = 1000 points per category (calibrated from median of 5 full runs)
 - **Method**: Geometric mean of ratios (commonly used in benchmark suites)
 - **Weights**: CPU-Single 25%, CPU-Multi 25%, Memory 15%, Disk 15%, GPU 20%
@@ -78,6 +85,13 @@ osx-bench run --export results.json
 | M2 | ~1100 |
 | M3 | ~1290 |
 | M4 | ~1600 |
+
+### AI Score (Separate)
+The AI/ML score is reported **separately** from the Total Score (similar to Geekbench AI):
+- **AI-CPU**: CoreML inference with CPU-only compute
+- **AI-GPU**: CoreML inference with GPU acceleration
+- **AI-Neural Engine**: CoreML inference with Neural Engine (when available)
+- **AI-BNNS**: Accelerate framework matrix operations
 
 *Note: Actual results may vary based on chassis, cooling, and configuration*
 

@@ -390,6 +390,8 @@ struct HTMLReportGenerator {
                     """ : "")
                 </section>
 
+                \(generateAIScoreSection())
+
                 \(generateThermalSection())
 
                 \(generateBenchmarkSections())
@@ -454,6 +456,39 @@ struct HTMLReportGenerator {
             </script>
         </body>
         </html>
+        """
+    }
+
+    private func generateAIScoreSection() -> String {
+        guard scores.ranAi else { return "" }
+
+        // Get AI benchmark result for sub-scores
+        let aiResult = results.result(for: .ai)
+        let subScores = aiResult?.tests.map { test -> String in
+            """
+            <div class="test-item">
+                <div class="test-name">\(escapeHTML(test.name))</div>
+                <div class="test-value">\(escapeHTML(test.formattedValue)) <span class="test-unit">\(escapeHTML(test.unit))</span></div>
+            </div>
+            """
+        }.joined(separator: "\n") ?? ""
+
+        return """
+        <section class="benchmark-section" style="background: linear-gradient(135deg, #00CED1 0%, #20B2AA 100%);">
+            <div class="benchmark-header">
+                <h2 style="color: white;">AI/ML Score (Separate)</h2>
+            </div>
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+                <div style="font-size: 4rem; font-weight: 700; color: white;">\(formatScoreHTML(scores.ai))</div>
+                <div style="color: rgba(255,255,255,0.8); font-size: 0.9rem;">Neural Engine & CoreML Performance</div>
+            </div>
+            <div class="test-grid">
+                \(subScores)
+            </div>
+            <p style="text-align: center; color: rgba(255,255,255,0.7); margin-top: 1rem; font-size: 0.85rem;">
+                AI Score is separate from Total Score (like Geekbench AI)
+            </p>
+        </section>
         """
     }
 

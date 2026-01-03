@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-01-03
+
+### Added
+
+- **AI/ML Benchmark** - New benchmark category for Neural Engine and CoreML inference
+  - CoreML CPU inference test (images per second)
+  - CoreML GPU inference test (images per second)
+  - CoreML Neural Engine inference test (images per second)
+  - BNNS matrix operations test (GFLOPS via Accelerate framework)
+- **AI Score is separate from Total Score** (like Geekbench AI)
+  - Total Score remains: CPU-Single, CPU-Multi, Memory, Disk, GPU
+  - AI Score: geometric mean of CPU/GPU/Neural Engine/BNNS tests
+- **Model download system** for CoreML models
+  - Automatic download from GitHub Releases with SHA256 verification
+  - Cache in `~/Library/Application Support/osx-bench/models/`
+  - `--model-path` option for custom local models
+  - `--offline` flag to skip AI benchmark without download
+- New CLI options: `--only ai`, `--only ml`, `--only neural`, `--only coreml`
+- **First-run privacy consent prompt**
+  - Displays privacy policy summary on first launch
+  - Links to full policy at GitHub wiki
+  - User must accept (y/n) to continue
+  - Acceptance stored in `~/Library/Application Support/osx-bench/`
+- Privacy policy wiki page with full disclosure
+
+### Changed
+
+- This is a **MAJOR** version bump (v2.0.0) due to new benchmark category
+- HTML report now includes separate AI/ML score section with teal gradient
+- CLI output shows AI score in separate section below Total Score
+
+### Technical Details
+
+- Uses CoreML with configurable compute units (.cpuOnly, .cpuAndGPU, .all)
+- Neural Engine engaged via `.all` compute units when available
+- BNNS matmul uses vDSP from Accelerate framework
+- Warmup: 5 iterations (quick) / 20 iterations (full) before measurement
+- Duration-based testing with minimum 5 iterations per compute unit
+
 ## [1.4.1] - 2026-01-03
 
 ### Fixed
@@ -312,6 +351,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[2.0.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.0.0
 [1.4.1]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.4.1
 [1.4.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.4.0
 [1.3.2]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.3.2

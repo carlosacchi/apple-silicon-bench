@@ -5,13 +5,16 @@ actor BenchmarkRunner {
     private let quickMode: Bool
     private let duration: Int  // Duration in seconds per test
     private let selectedBenchmarks: Set<BenchmarkType>?
+    private let modelManager: ModelManager
     private let thermalCollector = ThermalCollector()
 
-    init(systemInfo: SystemInfo, quickMode: Bool, duration: Int, selectedBenchmarks: Set<BenchmarkType>?) {
+    init(systemInfo: SystemInfo, quickMode: Bool, duration: Int, selectedBenchmarks: Set<BenchmarkType>?,
+         modelManager: ModelManager = ModelManager()) {
         self.systemInfo = systemInfo
         self.quickMode = quickMode
         self.duration = duration
         self.selectedBenchmarks = selectedBenchmarks
+        self.modelManager = modelManager
     }
 
     func runAll() async throws -> BenchmarkResults {
@@ -68,6 +71,8 @@ actor BenchmarkRunner {
             benchmark = DiskBenchmark(duration: duration, quickMode: quickMode)
         case .gpu:
             benchmark = GPUBenchmark(duration: duration, quickMode: quickMode, gpuCores: systemInfo.gpuCores)
+        case .ai:
+            benchmark = AIBenchmark(duration: duration, quickMode: quickMode, modelManager: modelManager)
         }
 
         let tests = try await benchmark.run()
