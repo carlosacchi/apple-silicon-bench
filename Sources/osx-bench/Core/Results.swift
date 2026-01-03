@@ -175,6 +175,9 @@ struct BenchmarkScores: Codable {
     }
 
     private func formatScore(_ score: Double) -> String {
+        if !score.isFinite {
+            return "INCOMPLETE"
+        }
         score > 0 ? String(Int(score)) : "Failed"
     }
 
@@ -269,23 +272,23 @@ struct BenchmarkScorer {
         var totalScore = 0.0
         var totalWeight = 0.0
 
-        if ranCpuSingle {
+        if ranCpuSingle, cpuSingle.isFinite, cpuSingle > 0 {
             totalScore += cpuSingle * 0.25
             totalWeight += 0.25
         }
-        if ranCpuMulti {
+        if ranCpuMulti, cpuMulti.isFinite, cpuMulti > 0 {
             totalScore += cpuMulti * 0.25
             totalWeight += 0.25
         }
-        if ranMemory {
+        if ranMemory, memory.isFinite, memory > 0 {
             totalScore += memory * 0.15
             totalWeight += 0.15
         }
-        if ranDisk {
+        if ranDisk, disk.isFinite, disk > 0 {
             totalScore += disk * 0.15
             totalWeight += 0.15
         }
-        if ranGpu {
+        if ranGpu, gpu.isFinite, gpu > 0 {
             totalScore += gpu * 0.20
             totalWeight += 0.20
         }
@@ -312,11 +315,13 @@ struct BenchmarkScorer {
 
     private func calculateCPUSingleScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .cpuSingleCore) else { return 0 }
+        guard !hasInvalidTests(result) else { return Double.nan }
         return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "")
     }
 
     private func calculateCPUMultiScore(_ results: BenchmarkResults, coreCount: Int) -> Double {
         guard let result = results.result(for: .cpuMultiCore) else { return 0 }
+        guard !hasInvalidTests(result) else { return Double.nan }
         // Use dedicated multi-core reference values (M1 8-core baseline)
         // Chips with more cores will naturally score higher
         return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "", transformKey: { $0.lowercased() })
@@ -324,11 +329,13 @@ struct BenchmarkScorer {
 
     private func calculateMemoryScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .memory) else { return 0 }
+        guard !hasInvalidTests(result) else { return Double.nan }
         return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "mem_")
     }
 
     private func calculateDiskScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .disk) else { return 0 }
+        guard !hasInvalidTests(result) else { return Double.nan }
         // Disk scores use clamped ratios (0.25 - 4.0) to prevent outliers from
         // dominating the score. Disk benchmarks are highly variable due to:
         // - SSD capacity differences (256GB vs 1TB = different NAND channels)
@@ -344,14 +351,20 @@ struct BenchmarkScorer {
 
     private func calculateGPUScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .gpu) else { return 0 }
+        guard !hasInvalidTests(result) else { return Double.nan }
         return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "gpu_")
     }
 
     private func calculateAIScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .ai) else { return 0 }
+        guard !hasInvalidTests(result) else { return Double.nan }
         // AI tests: CPU, GPU, Neural Engine (IPS), BNNS (GFLOPS)
         // Use geometric mean with "ai_" prefix
         return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "ai_")
+    }
+
+    private func hasInvalidTests(_ result: BenchmarkResult) -> Bool {
+        result.tests.contains { !$0.value.isFinite || $0.value <= 0 }
     }
 
     // MARK: - Geometric Mean Helper
@@ -419,5 +432,148 @@ struct ResultsExporter {
 
         let jsonData = try encoder.encode(data)
         try jsonData.write(to: URL(fileURLWithPath: path))
+    }
+
+    /// Export advanced profiling results to a separate JSON file
+    static func exportAdvancedJSON(
+        advancedResults: AdvancedProfileResults,
+        systemInfo: SystemInfo,
+        timestamp: Date,
+        to path: String
+    ) throws {
+        struct AdvancedExport: Codable {
+            struct Metadata: Codable {
+                let version: String
+                let timestamp: Date
+                let preset: String
+                let durationSeconds: Int
+            }
+
+            struct Point: Codable {
+                let x: Int
+                let y: Double
+            }
+
+            struct DiskPoint: Codable {
+                let qd: Int
+                let iops: Double
+                let mbps: Double
+            }
+
+            struct DiskMetadata: Codable {
+                let blockSizeBytes: Int
+                let fileSizeBytes: Int
+                let opsPerQD: Int
+                let qdList: [Int]
+                let sync: String
+                let qdMapping: String
+                let cacheHints: [String]
+            }
+
+            struct CPUPoint: Codable {
+                let threads: Int
+                let throughput: Double
+                let efficiency: Double
+            }
+
+            struct CliffAnalysis: Codable {
+                let cliffThreads: Int?
+                let efficiencyAfter: Double?
+                let threshold: Double
+            }
+
+            struct MemoryProfile: Codable {
+                let strideSweep: [Point]
+                let blockSizeSweep: [Point]
+            }
+
+            struct DiskProfile: Codable {
+                let qdReadMatrix: [DiskPoint]
+                let qdWriteMatrix: [DiskPoint]
+                let metadata: DiskMetadata
+            }
+
+            struct CPUScalingProfile: Codable {
+                let threadScaling: [CPUPoint]
+                let scalingEfficiency: Double
+                let cliff: CliffAnalysis
+            }
+
+            let systemInfo: SystemInfoExport
+            let metadata: Metadata
+            let memory: MemoryProfile?
+            let disk: DiskProfile?
+            let cpuScaling: CPUScalingProfile?
+        }
+
+        let preset = advancedResults.quickMode ? "quick" : "normal"
+        let diskBlockSize = 4 * 1024
+        let diskFileSize = advancedResults.quickMode ? 256 * 1024 * 1024 : 512 * 1024 * 1024
+        let opsPerQD = advancedResults.quickMode ? 100 : 500
+        let qdList = advancedResults.disk?.qdReadMatrix.map { $0.qd } ?? []
+
+        let metadata = AdvancedExport.Metadata(
+            version: AppInfo.version,
+            timestamp: timestamp,
+            preset: preset,
+            durationSeconds: advancedResults.duration
+        )
+
+        let memoryProfile = advancedResults.memory.map { memory in
+            AdvancedExport.MemoryProfile(
+                strideSweep: memory.strideSweep.map { AdvancedExport.Point(x: $0.stride, y: $0.gbps) },
+                blockSizeSweep: memory.blockSizeSweep.map { AdvancedExport.Point(x: $0.blockSize, y: $0.gbps) }
+            )
+        }
+
+        let diskProfile = advancedResults.disk.map { disk in
+            let diskMetadata = AdvancedExport.DiskMetadata(
+                blockSizeBytes: diskBlockSize,
+                fileSizeBytes: diskFileSize,
+                opsPerQD: opsPerQD,
+                qdList: qdList,
+                sync: "Reads prefill + F_FULLFSYNC; writes F_FULLFSYNC at end",
+                qdMapping: "Concurrent threads simulate queue depth; each thread runs synchronous pread/pwrite ops",
+                cacheHints: ["F_NOCACHE"]
+            )
+            return AdvancedExport.DiskProfile(
+                qdReadMatrix: disk.qdReadMatrix.map { AdvancedExport.DiskPoint(qd: $0.qd, iops: $0.iops, mbps: $0.mbps) },
+                qdWriteMatrix: disk.qdWriteMatrix.map { AdvancedExport.DiskPoint(qd: $0.qd, iops: $0.iops, mbps: $0.mbps) },
+                metadata: diskMetadata
+            )
+        }
+
+        let cpuScaling = advancedResults.cpuScaling.map { cpu in
+            let cliff = cpu.scalingCliffAnalysis
+            let cliffAnalysis = AdvancedExport.CliffAnalysis(
+                cliffThreads: cliff.cliffThreads,
+                efficiencyAfter: cliff.efficiencyAfter,
+                threshold: cliff.threshold
+            )
+            return AdvancedExport.CPUScalingProfile(
+                threadScaling: cpu.threadScaling.map {
+                    AdvancedExport.CPUPoint(threads: $0.threads, throughput: $0.throughput, efficiency: $0.efficiency)
+                },
+                scalingEfficiency: cpu.scalingEfficiency,
+                cliff: cliffAnalysis
+            )
+        }
+
+        let export = AdvancedExport(
+            systemInfo: systemInfo.forExport(),
+            metadata: metadata,
+            memory: memoryProfile,
+            disk: diskProfile,
+            cpuScaling: cpuScaling
+        )
+
+        let exportURL = URL(fileURLWithPath: path)
+        let outputURL = exportURL.deletingLastPathComponent().appendingPathComponent("advanced_profiles.json")
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let jsonData = try encoder.encode(export)
+        try jsonData.write(to: outputURL)
     }
 }

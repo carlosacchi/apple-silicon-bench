@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.3] - 2026-01-03
+
+### Added
+
+- Advanced profiling JSON export (`advanced_profiles.json`) alongside standard JSON export
+- Plausibility checks in HTML report for unusually high disk or memory throughput
+
+### Changed
+
+- Advanced disk profile section now includes explicit test parameters and cache/sync details
+- Scaling cliff detection now reports significant efficiency drops instead of a binary threshold
+- Benchmark categories with invalid subtests are marked INCOMPLETE and excluded from aggregate scoring
+
+### Fixed
+
+- Prevented `inf` values in memory block-size sweep by using adaptive timing and warmup passes
+
 ## [2.1.2] - 2026-01-03
 
 ### Changed
@@ -425,6 +442,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[2.1.3]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.3
 [2.1.2]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.2
 [2.1.1]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.1
 [2.1.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.0

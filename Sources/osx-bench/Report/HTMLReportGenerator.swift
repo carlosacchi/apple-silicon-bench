@@ -24,6 +24,9 @@ struct HTMLReportGenerator {
     }
 
     private func formatScoreHTML(_ score: Double) -> String {
+        if !score.isFinite {
+            return "<span style=\"color: #feca57;\">INCOMPLETE</span>"
+        }
         score > 0 ? String(Int(score)) : "<span style=\"color: #e74c3c;\">Failed</span>"
     }
 
@@ -399,6 +402,7 @@ struct HTMLReportGenerator {
                 </section>
 
                 \(generateThermalSection())
+                \(generatePlausibilitySection())
 
                 \(generateBenchmarkSections())
 
@@ -525,16 +529,55 @@ struct HTMLReportGenerator {
         """
     }
 
+    private func generatePlausibilitySection() -> String {
+        let warnings = generatePlausibilityWarnings()
+        guard !warnings.isEmpty else { return "" }
+
+        return """
+        <section class="benchmark-section" style="border: 1px solid #feca57;">
+            <h2>Plausibility Checks</h2>
+            <ul style="margin: 0.5rem 0 0 1.25rem; color: #feca57;">
+                \(warnings.map { "<li>\(escapeHTML($0))</li>" }.joined())
+            </ul>
+        </section>
+        """
+    }
+
+    private func generatePlausibilityWarnings() -> [String] {
+        var warnings: [String] = []
+
+        if let disk = results.result(for: .disk) {
+            let diskSeqThreshold = 6000.0
+            let diskSeq = disk.tests.filter { $0.name.lowercased().contains("seq") }
+            if diskSeq.contains(where: { $0.value > diskSeqThreshold }) {
+                warnings.append("Disk throughput appears unusually high (> \(Int(diskSeqThreshold)) MB/s). This can indicate filesystem cache effects; rerun full mode and verify cache bypass.")
+            }
+        }
+
+        if let memory = results.result(for: .memory) {
+            let memoryThreshold = 1000.0
+            let memoryBandwidth = memory.tests.filter { $0.name.lowercased() != "latency" }
+            if memoryBandwidth.contains(where: { $0.value > memoryThreshold }) {
+                warnings.append("Memory bandwidth appears unusually high (> \(Int(memoryThreshold)) GB/s). This can indicate timer resolution or optimization artifacts; rerun full mode.")
+            }
+        }
+
+        return warnings
+    }
+
     private func generateBenchmarkSections() -> String {
         var sections = ""
 
         for result in results.benchmarks {
             let thermalBadge = getThermalBadgeHTML(start: result.thermalStart, end: result.thermalEnd)
+            let incompleteBadge = isIncompleteResult(result)
+                ? "<span style=\"margin-left: 0.5rem; color: #feca57; font-weight: 700;\">INCOMPLETE</span>"
+                : ""
 
             sections += """
             <section class="benchmark-section">
                 <div class="benchmark-header">
-                    <h2>\(result.type.displayName)</h2>
+                    <h2>\(result.type.displayName)\(incompleteBadge)</h2>
                     <div class="benchmark-thermal">
                         \(thermalBadge)
                     </div>
@@ -591,11 +634,11 @@ struct HTMLReportGenerator {
 
     private func generateChartData() -> String {
         var data: [String] = []
-        if scores.ranCpuSingle { data.append(String(Int(scores.cpuSingleCore))) }
-        if scores.ranCpuMulti { data.append(String(Int(scores.cpuMultiCore))) }
-        if scores.ranMemory { data.append(String(Int(scores.memory))) }
-        if scores.ranDisk { data.append(String(Int(scores.disk))) }
-        if scores.ranGpu { data.append(String(Int(scores.gpu))) }
+        if scores.ranCpuSingle { data.append(String(chartValue(scores.cpuSingleCore))) }
+        if scores.ranCpuMulti { data.append(String(chartValue(scores.cpuMultiCore))) }
+        if scores.ranMemory { data.append(String(chartValue(scores.memory))) }
+        if scores.ranDisk { data.append(String(chartValue(scores.disk))) }
+        if scores.ranGpu { data.append(String(chartValue(scores.gpu))) }
         return data.joined(separator: ", ")
     }
 
@@ -618,6 +661,15 @@ struct HTMLReportGenerator {
 
     private func formatColor(_ color: (r: Int, g: Int, b: Int), alpha: Double) -> String {
         "'rgba(\(color.r), \(color.g), \(color.b), \(alpha))'"
+    }
+
+    private func chartValue(_ score: Double) -> Int {
+        guard score.isFinite, score > 0 else { return 0 }
+        return Int(score)
+    }
+
+    private func isIncompleteResult(_ result: BenchmarkResult) -> Bool {
+        result.tests.contains { !$0.value.isFinite || $0.value <= 0 }
     }
 
     // MARK: - Advanced Profile Section
@@ -671,9 +723,22 @@ struct HTMLReportGenerator {
 
         // Disk Profile
         if let disk = advanced.disk {
+            let qdList = disk.qdReadMatrix.map { "QD\($0.qd)" }.joined(separator: ", ")
+            let diskBlockSize = 4 * 1024
+            let diskFileSize = advanced.quickMode ? 256 * 1024 * 1024 : 512 * 1024 * 1024
+            let opsPerQD = advanced.quickMode ? 100 : 500
+            let diskMeta = """
+            <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(254,202,87,0.1); border-radius: 8px; font-size: 0.85rem; color: #a0a0a0;">
+                <div><strong style="color: #feca57;">Parameters:</strong> Block size \(formatBytes(diskBlockSize)), file size \(formatBytes(diskFileSize)), QD list \(qdList)</div>
+                <div>Sync: reads prefill + F_FULLFSYNC; writes F_FULLFSYNC at end</div>
+                <div>QD mapping: concurrent threads (one per QD), each runs \(opsPerQD) ops using synchronous pread/pwrite</div>
+                <div>Cache hints: F_NOCACHE enabled</div>
+            </div>
+            """
             sections += """
             <div style="margin-bottom: 2rem;">
                 <h3 style="color: #feca57; margin-bottom: 1rem;">Disk Profile (Queue Depth Matrix)</h3>
+                \(diskMeta)
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
                     <div>
@@ -707,6 +772,13 @@ struct HTMLReportGenerator {
 
         // CPU Scaling Profile
         if let cpu = advanced.cpuScaling {
+            let cliffAnalysis = cpu.scalingCliffAnalysis
+            let cliffSummary: String
+            if let cliff = cliffAnalysis.cliffThreads, let efficiencyAfter = cliffAnalysis.efficiencyAfter {
+                cliffSummary = "Cliff near \(cliff) threads (\(String(format: "%.1f", efficiencyAfter))% after)"
+            } else {
+                cliffSummary = "No significant cliff (threshold=\(String(format: "%.0f", cliffAnalysis.threshold))%)"
+            }
             sections += """
             <div style="margin-bottom: 1rem;">
                 <h3 style="color: #00d9ff; margin-bottom: 1rem;">CPU Thread Scaling</h3>
@@ -729,8 +801,8 @@ struct HTMLReportGenerator {
                     </div>
                     <div style="flex: 1; padding: 1rem; background: rgba(0,217,255,0.1); border-radius: 8px; text-align: center;">
                         <div style="color: #a0a0a0; font-size: 0.85rem;">Scaling Cliff</div>
-                        <div style="font-size: 2rem; font-weight: 700; color: \(cpu.scalingCliff != nil ? "#feca57" : "#00ff88");">
-                            \(cpu.scalingCliff.map { "\($0) threads" } ?? "None")
+                        <div style="font-size: 1.25rem; font-weight: 700; color: \(cliffAnalysis.cliffThreads != nil ? "#feca57" : "#00ff88");">
+                            \(cliffSummary)
                         </div>
                     </div>
                 </div>

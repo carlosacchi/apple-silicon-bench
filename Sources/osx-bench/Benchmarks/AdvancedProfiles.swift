@@ -101,6 +101,10 @@ struct MemoryProfile {
                128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024,
                4 * 1024 * 1024, 16 * 1024 * 1024, 64 * 1024 * 1024, 128 * 1024 * 1024]
 
+        let minStepTime: Double = quickMode ? 0.2 : 0.3
+        let minBytes: Int = quickMode ? 512 * 1024 * 1024 : 1024 * 1024 * 1024
+        let measuredPasses = quickMode ? 3 : 5
+
         for blockSize in blockSizes {
             var srcBuffer: UnsafeMutableRawPointer?
             var dstBuffer: UnsafeMutableRawPointer?
@@ -119,22 +123,49 @@ struct MemoryProfile {
 
             memset(src, 0x5A, blockSize)
 
-            let iterations = quickMode ? 20 : 100
             var totalGbps = 0.0
 
-            for _ in 0..<iterations {
-                let start = CFAbsoluteTimeGetCurrent()
-                memcpy(dst, src, blockSize)
-                OSMemoryBarrier()
-                let duration = CFAbsoluteTimeGetCurrent() - start
+            // Warm-up (not measured) to stabilize caches/timing
+            memcpy(dst, src, blockSize)
+            OSMemoryBarrier()
 
-                totalGbps += Double(blockSize) / duration / (1024 * 1024 * 1024)
+            for _ in 0..<measuredPasses {
+                let (bytesCopied, elapsed) = measureAdaptiveCopy(
+                    src: src,
+                    dst: dst,
+                    blockSize: blockSize,
+                    minStepTime: minStepTime,
+                    minBytes: minBytes
+                )
+                guard elapsed > 0 else { continue }
+                totalGbps += Double(bytesCopied) / elapsed / (1024 * 1024 * 1024)
             }
 
-            results.append((blockSize: blockSize, gbps: totalGbps / Double(iterations)))
+            results.append((blockSize: blockSize, gbps: totalGbps / Double(measuredPasses)))
         }
 
         return results
+    }
+
+    private func measureAdaptiveCopy(
+        src: UnsafeMutableRawPointer,
+        dst: UnsafeMutableRawPointer,
+        blockSize: Int,
+        minStepTime: Double,
+        minBytes: Int
+    ) -> (bytesCopied: Int, elapsed: Double) {
+        var bytesCopied = 0
+        let start = CFAbsoluteTimeGetCurrent()
+        var elapsed = 0.0
+
+        repeat {
+            memcpy(dst, src, blockSize)
+            OSMemoryBarrier()
+            bytesCopied += blockSize
+            elapsed = CFAbsoluteTimeGetCurrent() - start
+        } while elapsed < minStepTime || bytesCopied < minBytes
+
+        return (bytesCopied, elapsed)
     }
 }
 
@@ -416,9 +447,57 @@ struct CPUScalingResult {
     let threadScaling: [(threads: Int, throughput: Double, efficiency: Double)]
     let scalingEfficiency: Double  // Average efficiency (0-100%)
 
-    /// Thread count where efficiency drops below 80%
-    var scalingCliff: Int? {
-        threadScaling.first { $0.efficiency < 80 }?.threads
+    struct ScalingCliffAnalysis {
+        let cliffThreads: Int?
+        let efficiencyAfter: Double?
+        let threshold: Double
+        let baselineThreads: Int?
+        let comparisonThreads: Int?
+    }
+
+    /// Detects a scaling cliff by comparing efficiency before/after a thread count step.
+    var scalingCliffAnalysis: ScalingCliffAnalysis {
+        let threshold = 20.0
+        let dataByThreads = Dictionary(uniqueKeysWithValues: threadScaling.map { ($0.threads, $0.efficiency) })
+
+        let baselineCandidates = [4, 2, 1]
+        let baselineThreads = baselineCandidates.first { dataByThreads[$0] != nil }
+        guard let baseline = baselineThreads, let baselineEfficiency = dataByThreads[baseline] else {
+            return ScalingCliffAnalysis(
+                cliffThreads: nil,
+                efficiencyAfter: nil,
+                threshold: threshold,
+                baselineThreads: nil,
+                comparisonThreads: nil
+            )
+        }
+
+        let comparisonThreads = threadScaling
+            .map { $0.threads }
+            .filter { $0 > baseline }
+            .sorted()
+            .first
+
+        guard let comparison = comparisonThreads, let comparisonEfficiency = dataByThreads[comparison] else {
+            return ScalingCliffAnalysis(
+                cliffThreads: nil,
+                efficiencyAfter: nil,
+                threshold: threshold,
+                baselineThreads: baseline,
+                comparisonThreads: nil
+            )
+        }
+
+        let efficiencyDrop = baselineEfficiency - comparisonEfficiency
+        let cliffDetected = efficiencyDrop >= threshold
+
+        return ScalingCliffAnalysis(
+            cliffThreads: cliffDetected ? baseline : nil,
+            efficiencyAfter: cliffDetected ? comparisonEfficiency : nil,
+            threshold: threshold,
+            baselineThreads: baseline,
+            comparisonThreads: comparison
+        )
     }
 }
 
@@ -428,6 +507,8 @@ struct AdvancedProfileResults {
     let memory: MemoryProfileResult?
     let disk: DiskProfileResult?
     let cpuScaling: CPUScalingResult?
+    let quickMode: Bool
+    let duration: Int
 }
 
 // MARK: - Errors

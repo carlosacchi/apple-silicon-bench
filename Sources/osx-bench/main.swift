@@ -105,6 +105,17 @@ struct Run: AsyncParsableCommand {
         if let exportPath = export {
             try ResultsExporter.exportJSON(results: results, scores: scores, systemInfo: systemInfo, to: exportPath)
             print("📁 JSON exported to: \(exportPath)")
+            if let advancedResults = advancedResults {
+                try ResultsExporter.exportAdvancedJSON(
+                    advancedResults: advancedResults,
+                    systemInfo: systemInfo,
+                    timestamp: results.timestamp,
+                    to: exportPath
+                )
+                let exportURL = URL(fileURLWithPath: exportPath)
+                let advancedPath = exportURL.deletingLastPathComponent().appendingPathComponent("advanced_profiles.json").path
+                print("📁 Advanced JSON exported to: \(advancedPath)")
+            }
         }
 
         // Print final scores
@@ -164,7 +175,9 @@ struct Run: AsyncParsableCommand {
         return AdvancedProfileResults(
             memory: memoryResult,
             disk: diskResult,
-            cpuScaling: cpuResult
+            cpuScaling: cpuResult,
+            quickMode: quick,
+            duration: duration
         )
     }
 
@@ -198,10 +211,12 @@ struct Run: AsyncParsableCommand {
         // CPU
         print("  CPU Scaling:")
         print("    Scaling Efficiency ........ \(String(format: "%.1f", cpu.scalingEfficiency))%")
-        if let cliff = cpu.scalingCliff {
-            print("    Scaling cliff at .......... \(cliff) threads")
+        let cliffAnalysis = cpu.scalingCliffAnalysis
+        if let cliff = cliffAnalysis.cliffThreads, let efficiencyAfter = cliffAnalysis.efficiencyAfter {
+            print("    Scaling cliff near ........ \(cliff) threads")
+            print("    Efficiency after .......... \(String(format: "%.1f", efficiencyAfter))%")
         } else {
-            print("    Scaling cliff ............. None detected")
+            print("    Scaling cliff ............. No significant cliff (threshold=\(String(format: "%.0f", cliffAnalysis.threshold))%)")
         }
 
         print(line)
