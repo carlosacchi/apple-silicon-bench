@@ -178,7 +178,7 @@ struct BenchmarkScores: Codable {
         if !score.isFinite {
             return "INCOMPLETE"
         }
-        score > 0 ? String(Int(score)) : "Failed"
+        return score > 0 ? String(Int(score)) : "Failed"
     }
 
     private func dotPad(_ label: String, _ value: String) -> String {

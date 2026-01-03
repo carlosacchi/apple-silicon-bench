@@ -27,7 +27,7 @@ struct HTMLReportGenerator {
         if !score.isFinite {
             return "<span style=\"color: #feca57;\">INCOMPLETE</span>"
         }
-        score > 0 ? String(Int(score)) : "<span style=\"color: #e74c3c;\">Failed</span>"
+        return score > 0 ? String(Int(score)) : "<span style=\"color: #e74c3c;\">Failed</span>"
     }
 
     func generate() throws -> String {
