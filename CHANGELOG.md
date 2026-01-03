@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-01-04
+
+### Fixed
+
+- **HTML Report AI Score Position**: Moved AI/ML Score section after AI/ML benchmark section
+  - Previously appeared before all benchmarks
+  - Now appears immediately after AI/ML results for better logical flow
+- **HTML Report Color Contrast**: Fixed unreadable light blue text on light background
+  - Changed from light blue gradient background to dark background with cyan accents
+  - Improved text readability with proper contrast ratios
+
 ## [2.0.2] - 2026-01-03
 
 ### Fixed
@@ -369,6 +380,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[2.0.3]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.0.3
 [2.0.2]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.0.2
 [2.0.1]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.0.1
 [2.0.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.0.0

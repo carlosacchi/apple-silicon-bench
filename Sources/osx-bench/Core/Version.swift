@@ -2,7 +2,7 @@ import Foundation
 
 enum AppInfo {
     // Version is synced from Package.swift by scripts/bump-version.sh
-    static let version = "2.0.2"
+    static let version = "2.0.3"
 
     static let name = "osx-bench"
     static let fullName = "Apple Silicon Bench"
@@ -11,7 +11,7 @@ enum AppInfo {
     // Developer info
     static let developer = "Carlo Sacchi"
     static let license = "MIT License"
-    static let releaseDate = "2026-01-03"  // Updated with each release
+    static let releaseDate = "2026-01-04"  // Updated with each release
 
     static var copyright: String {
         let year = Calendar.current.component(.year, from: Date())
