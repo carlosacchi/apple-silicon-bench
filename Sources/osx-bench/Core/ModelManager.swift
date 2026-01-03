@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import CoreML
 
 // MARK: - Model Manager
 
@@ -106,39 +107,25 @@ struct ModelManager {
 
         print("  ⚙️  Compiling model for your device...")
 
-        // Compile the model using coremlcompiler
-        try compileModel()
+        // Compile the model using CoreML's built-in compiler (no Xcode needed)
+        let compiledURL = try compileModelWithCoreML()
 
         // Clean up source .mlmodel (keep only compiled)
         try? FileManager.default.removeItem(at: Self.cachedSourcePath)
 
-        // Verify compiled model exists
-        guard FileManager.default.fileExists(atPath: Self.cachedCompiledPath.path) else {
-            throw ModelError.compilationFailed
-        }
-
         print("  ✓ Model ready")
-        return Self.cachedCompiledPath
+        return compiledURL
     }
 
-    private func compileModel() throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = [
-            "coremlcompiler",
-            "compile",
-            Self.cachedSourcePath.path,
-            Self.cacheDirectory.path
-        ]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+    private func compileModelWithCoreML() throws -> URL {
+        // Use CoreML's built-in model compiler - works without Xcode Command Line Tools
+        let compiledURL = try MLModel.compileModel(at: Self.cachedSourcePath)
 
-        try process.run()
-        process.waitUntilExit()
+        // Move compiled model to our cache directory
+        try? FileManager.default.removeItem(at: Self.cachedCompiledPath)
+        try FileManager.default.moveItem(at: compiledURL, to: Self.cachedCompiledPath)
 
-        guard process.terminationStatus == 0 else {
-            throw ModelError.compilationFailed
-        }
+        return Self.cachedCompiledPath
     }
 
     // MARK: - Helpers
@@ -170,7 +157,7 @@ enum ModelError: LocalizedError {
         case .hashMismatch(let expected, let actual):
             return "Model integrity check failed. Expected SHA256: \(expected), got: \(actual)"
         case .compilationFailed:
-            return "Failed to compile CoreML model (requires Xcode Command Line Tools)"
+            return "Failed to compile CoreML model"
         }
     }
 }
