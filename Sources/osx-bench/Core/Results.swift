@@ -201,14 +201,15 @@ struct BenchmarkScorer {
         "mem_copy": 27.84,            // 27.84 GB/s on M1
         "mem_latency": 54.95,         // 54.95 ns on M1 (lower is better)
 
-        // Disk (MB/s) - NovaBench-compatible patterns
-        // Sequential: 4MB blocks with cache bypass (F_NOCACHE + F_FULLFSYNC)
-        // Random: 4KB blocks, QD1 pattern
-        // Reference: NovaBench M1 results (3356/3279 MB/s seq, 166/761 MB/s random)
-        "disk_seq_read": 3356,        // 3356 MB/s on M1 (NovaBench reference)
-        "disk_seq_write": 3279,       // 3279 MB/s on M1 (NovaBench reference)
-        "disk_rand_read": 166,        // 166 MB/s on M1 (NovaBench: 4KB QD1)
-        "disk_rand_write": 761,       // 761 MB/s on M1 (NovaBench: 4KB QD1)
+        // Disk (MB/s) - Real disk performance with cache bypass
+        // Sequential: 4MB blocks with F_NOCACHE + F_FULLFSYNC
+        // Random: 4KB blocks, QD1 pattern, 1GB file (exceeds cache)
+        // Values from median of M1 runs with strict cache bypass
+        // Note: Lower than NovaBench because we measure actual disk, not cache
+        "disk_seq_read": 2180,        // 2180 MB/s on M1 (with F_NOCACHE)
+        "disk_seq_write": 700,        // 700 MB/s on M1 (with F_FULLFSYNC)
+        "disk_rand_read": 43,         // 43 MB/s on M1 (1GB file, true random)
+        "disk_rand_write": 17,        // 17 MB/s on M1 (with final F_FULLFSYNC)
 
         // GPU (GFLOPS, Mparts/s, MP/s) - median from 5 M1 runs (8-core GPU)
         "gpu_compute": 149.2,         // 149.2 GFLOPS matrix multiply on M1

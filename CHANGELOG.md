@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-01-03
+
+### Fixed
+
+- **Disk benchmark cache leak**: Random read was hitting filesystem cache
+  - Increased random file size to 1GB (full) / 512MB (quick) to exceed cache
+  - Apply F_NOCACHE BEFORE writing test files (not just on read)
+  - Results now stable and reproducible
+
+### Changed
+
+- **Disk baselines recalibrated** to real M1 values with strict cache bypass:
+  - Seq Read: 2180 MB/s (was 3356 - NovaBench includes cache)
+  - Seq Write: 700 MB/s (was 3279 - with F_FULLFSYNC)
+  - Rand Read: 43 MB/s (was 166 - true random from 1GB file)
+  - Rand Write: 17 MB/s (was 761 - with final sync)
+- Our tool now measures **actual disk performance**, not cache throughput
+- This makes scores more meaningful for real-world workloads
+
+### Technical Details
+
+- Random tests now use 1GB file (full) / 512MB (quick) to exceed unified memory cache
+- F_NOCACHE applied to write operations to prevent cache population
+- Disk scores should now be stable across runs (~1000 on M1)
+
 ## [1.4.0] - 2026-01-02
 
 ### Added
@@ -287,6 +312,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[1.4.1]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.4.1
 [1.4.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.4.0
 [1.3.2]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.3.2
 [1.3.1]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v1.3.1

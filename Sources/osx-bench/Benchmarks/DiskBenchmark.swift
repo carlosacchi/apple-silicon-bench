@@ -7,11 +7,14 @@ struct DiskBenchmark: Benchmark {
 
     private let testDir: URL
     // NovaBench-compatible parameters:
-    // - Sequential: 4MB blocks (NovaBench uses up to 8 simultaneous, we use single-threaded for stability)
+    // - Sequential: 4MB blocks
     // - Random: 4KB blocks, QD1 (single operation)
     private let sequentialBlockSize = 4 * 1024 * 1024  // 4 MB (NovaBench standard)
-    private var sequentialSize: Int { quickMode ? 256 * 1024 * 1024 : 512 * 1024 * 1024 }  // 256MB quick, 512MB full
+    private var sequentialSize: Int { quickMode ? 256 * 1024 * 1024 : 512 * 1024 * 1024 }
     private let randomBlockSize = 4096  // 4 KB (NovaBench standard)
+    // Random file size: must be larger than unified memory cache to avoid cache hits
+    // M1 has 8-16GB RAM, so 1GB file in full mode should exceed typical cache
+    private var randomFileSize: Int { quickMode ? 512 * 1024 * 1024 : 1024 * 1024 * 1024 }
     private var randomOperations: Int { quickMode ? 500 : 2000 }
 
     init(duration: Int, quickMode: Bool = false) {
@@ -43,7 +46,7 @@ struct DiskBenchmark: Benchmark {
         }
         results.append(TestResult(name: "Seq_Read", value: seqReadResult, unit: "MB/s"))
 
-        // Random Write (4KB blocks, QD1)
+        // Random Write (4KB blocks, QD1) - NovaBench style (no per-op sync)
         let randWriteResult = try measureForDuration(seconds: testDuration) {
             try runRandomWriteTest()
         }
@@ -122,7 +125,7 @@ struct DiskBenchmark: Benchmark {
     private func runSequentialReadTest() throws -> Double {
         let filePath = testDir.appendingPathComponent("seq_read_test_\(UUID().uuidString)")
 
-        // First, create the test file
+        // First, create the test file WITH F_NOCACHE to avoid populating cache
         var chunk = Data(count: sequentialBlockSize)
         chunk.withUnsafeMutableBytes { ptr in
             arc4random_buf(ptr.baseAddress!, sequentialBlockSize)
@@ -130,6 +133,9 @@ struct DiskBenchmark: Benchmark {
 
         let writefd = open(filePath.path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0o600)
         guard writefd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
+
+        // Set F_NOCACHE BEFORE writing to prevent cache population
+        _ = fcntl(writefd, F_NOCACHE, 1)
 
         var written = 0
         while written < sequentialSize {
@@ -169,11 +175,11 @@ struct DiskBenchmark: Benchmark {
     }
 
     // MARK: - Random Write (QD1)
-    /// NovaBench-compatible: 4KB blocks, one operation at a time with sync
+    /// NovaBench-compatible: 4KB blocks, one operation at a time
+    /// Note: NovaBench does NOT sync per-operation, only final sync
     private func runRandomWriteTest() throws -> Double {
         let filePath = testDir.appendingPathComponent("rand_write_test_\(UUID().uuidString)")
 
-        let fileSize = 256 * 1024 * 1024  // 256 MB sparse file
         let fd = open(filePath.path, O_RDWR | O_CREAT | O_TRUNC | O_NOFOLLOW, 0o600)
         guard fd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
         defer {
@@ -181,18 +187,19 @@ struct DiskBenchmark: Benchmark {
             try? FileManager.default.removeItem(at: filePath)
         }
 
-        _ = ftruncate(fd, off_t(fileSize))
+        // Pre-allocate file and set nocache BEFORE any I/O
+        _ = ftruncate(fd, off_t(randomFileSize))
         _ = fcntl(fd, F_NOCACHE, 1)
 
         var block = [UInt8](repeating: 0, count: randomBlockSize)
         arc4random_buf(&block, randomBlockSize)
 
-        let maxOffset = fileSize - randomBlockSize
+        let maxOffset = randomFileSize - randomBlockSize
         let blockAlignedMax = maxOffset / randomBlockSize
 
         let start = CFAbsoluteTimeGetCurrent()
 
-        // QD1: One operation at a time
+        // QD1: One operation at a time, NO per-op sync (NovaBench style)
         for _ in 0..<randomOperations {
             let blockIndex = Int(arc4random_uniform(UInt32(blockAlignedMax)))
             let offset = off_t(blockIndex * randomBlockSize)
@@ -200,7 +207,7 @@ struct DiskBenchmark: Benchmark {
             _ = write(fd, &block, randomBlockSize)
         }
 
-        // Final sync (not per-operation - that's too slow and not what NovaBench does)
+        // Single final sync (NovaBench style)
         _ = fcntl(fd, F_FULLFSYNC)
 
         let duration = CFAbsoluteTimeGetCurrent() - start
@@ -213,15 +220,18 @@ struct DiskBenchmark: Benchmark {
     private func runRandomReadTest() throws -> Double {
         let filePath = testDir.appendingPathComponent("rand_read_test_\(UUID().uuidString)")
 
-        let fileSize = 256 * 1024 * 1024  // 256 MB
         let chunkSize = 4 * 1024 * 1024
 
+        // Create file WITH F_NOCACHE to prevent cache population
         let writefd = open(filePath.path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0o600)
         guard writefd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
 
+        // Set F_NOCACHE BEFORE writing - critical for cold reads
+        _ = fcntl(writefd, F_NOCACHE, 1)
+
         var chunk = [UInt8](repeating: 0x5A, count: chunkSize)
         var written = 0
-        while written < fileSize {
+        while written < randomFileSize {
             let result = write(writefd, &chunk, chunkSize)
             if result < 0 { break }
             written += result
@@ -231,6 +241,7 @@ struct DiskBenchmark: Benchmark {
 
         defer { try? FileManager.default.removeItem(at: filePath) }
 
+        // Open for reading with cache bypass
         let fd = open(filePath.path, O_RDONLY | O_NOFOLLOW)
         guard fd >= 0 else { throw DiskBenchmarkError.fileOpenFailed }
         defer { close(fd) }
@@ -238,7 +249,7 @@ struct DiskBenchmark: Benchmark {
         _ = fcntl(fd, F_NOCACHE, 1)
 
         var readBuffer = [UInt8](repeating: 0, count: randomBlockSize)
-        let maxOffset = fileSize - randomBlockSize
+        let maxOffset = randomFileSize - randomBlockSize
         let blockAlignedMax = maxOffset / randomBlockSize
 
         let start = CFAbsoluteTimeGetCurrent()
