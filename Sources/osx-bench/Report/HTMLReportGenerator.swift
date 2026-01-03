@@ -641,7 +641,7 @@ struct HTMLReportGenerator {
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
                     <div>
-                        <h4 style="color: #a0a0a0; font-size: 0.85rem; margin-bottom: 0.5rem;">Stride Sweep</h4>
+                        <h4 style="color: #a0a0a0; font-size: 0.85rem; margin-bottom: 0.5rem;">Stride Throughput Sweep</h4>
                         <table style="width: 100%; font-size: 0.9rem;">
                             <tr style="color: #a0a0a0;"><th style="text-align: left;">Stride</th><th style="text-align: right;">Throughput</th></tr>
                             \(memory.strideSweep.map { """
