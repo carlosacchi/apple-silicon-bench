@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.6] - 2026-03-03
+
+### Fixed
+
+- **SIMD Multi-core scaling**: Multi-core SIMD test now uses cache-friendly vectors (8K elements, ~96KB per core) instead of 1M-element vectors (12MB per core). Previous version was memory-bandwidth bound, causing multi-core to barely outperform single-core. Now properly compute-bound and scales with core count.
+- Updated `simd_multi` reference baseline to ~56 GFLOPS (estimated from M1 scaling ratio; needs recalibration from real M1 runs)
+
+### Changed
+
+- Added disk score SSD capacity note to README scoring section: larger SSDs produce higher disk scores due to more NAND channels
+- Updated supported chips list with M5 Pro and M5 Max
+
 ## [2.1.5] - 2026-01-03
 
 ### Added
@@ -458,6 +470,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[2.1.6]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.6
 [2.1.5]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.5
 [2.1.4]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.4
 [2.1.3]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.3

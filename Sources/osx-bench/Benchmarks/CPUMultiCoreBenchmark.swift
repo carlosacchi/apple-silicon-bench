@@ -139,9 +139,15 @@ struct CPUMultiCoreBenchmark: Benchmark {
         return Double(floatOperations * 4) / duration / 1_000_000
     }
 
-    // MARK: - SIMD Test
+    // MARK: - SIMD Test (compute-bound for multi-core scaling)
     private func runSIMDTest() -> Double {
-        let vectorSize = 1_000_000
+        // Use small vectors that fit in L1 cache per core (~96KB total)
+        // This ensures the test is compute-bound, not memory-bandwidth bound,
+        // so throughput properly scales with core count.
+        // (1M-element vectors cause all cores to contend for shared memory bandwidth,
+        // making multi-core barely faster than single-core)
+        let vectorSize = 8_192  // 32KB per vector × 3 = 96KB (fits in 128KB L1)
+        let iterations = quickMode ? 2_400 : 12_000  // More iterations to compensate
 
         var vectorA = [Float](repeating: 0, count: vectorSize)
         var vectorB = [Float](repeating: 0, count: vectorSize)
@@ -154,7 +160,7 @@ struct CPUMultiCoreBenchmark: Benchmark {
 
         let start = CFAbsoluteTimeGetCurrent()
 
-        for _ in 0..<simdIterations {
+        for _ in 0..<iterations {
             vDSP_vma(vectorA, 1, vectorB, 1, vectorC, 1, &vectorC, 1, vDSP_Length(vectorSize))
             vDSP_vadd(vectorA, 1, vectorB, 1, &vectorC, 1, vDSP_Length(vectorSize))
             var dotResult: Float = 0
@@ -163,7 +169,7 @@ struct CPUMultiCoreBenchmark: Benchmark {
 
         let duration = CFAbsoluteTimeGetCurrent() - start
 
-        let totalOps = Double(simdIterations) * Double(vectorSize) * 6.0
+        let totalOps = Double(iterations) * Double(vectorSize) * 6.0
         return totalOps / duration / 1_000_000_000
     }
 

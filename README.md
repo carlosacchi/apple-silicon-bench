@@ -1,13 +1,13 @@
 # Apple Silicon Bench
 
-**A native macOS benchmark tool for Apple Silicon Macs (M1, M2, M3, M4, M5)**
+**A native macOS benchmark tool for Apple Silicon Macs (M1, M2, M3, M4, M5, M5 Pro, M5 Max)**
 
 [![Release](https://img.shields.io/github/v/release/carlosacchi/apple-silicon-bench)](https://github.com/carlosacchi/apple-silicon-bench/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-macOS-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org/)
 
-A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors. Compare your M1, M2, M3, M4, M5 (and future chips) performance with comprehensive CPU, GPU, memory, disk, and AI benchmarks.
+A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors. Compare your M1, M2, M3, M4, M5, M5 Pro, M5 Max (and future chips) performance with comprehensive CPU, GPU, memory, disk, and AI benchmarks.
 
 ## Features
 
@@ -88,6 +88,9 @@ osx-bench run --export results.json
 | M2 | ~1100 |
 | M3 | ~1290 |
 | M4 | ~1600 |
+| M5 | ~2100 |
+
+> **Note on Disk scores:** SSD capacity directly affects disk benchmark results. Larger SSDs (512GB, 1TB+) have more NAND channels working in parallel, producing higher throughput than smaller SSDs (256GB). Disk scores are clamped (0.25x-4.0x vs baseline) to limit this effect, but comparisons across different SSD capacities should account for this hardware difference.
 
 ### AI Score (Separate)
 The AI/ML score is reported **separately** from the Total Score (similar to Geekbench AI):
@@ -110,7 +113,7 @@ For detailed methodology, see the [Wiki](https://github.com/carlosacchi/apple-si
 ## Requirements
 
 - macOS 13.0 (Ventura) or later
-- Apple Silicon (M1, M2, M3, M4, M5 family)
+- Apple Silicon (M1, M2, M3, M4, M5 family including Pro/Max variants)
 
 ## Documentation
 

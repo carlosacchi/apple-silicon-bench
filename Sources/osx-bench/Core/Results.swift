@@ -212,7 +212,7 @@ struct BenchmarkScorer {
         // CPU Multi-Core - median from 5 M1 runs (8 cores: 4P + 4E)
         "integer_multi": 9940,        // 9940 Mops/s on M1 (8 cores)
         "float_multi": 803,           // 803 Mops/s on M1 (8 cores)
-        "simd_multi": 6.18,           // 6.18 GFLOPS on M1 (8 cores)
+        "simd_multi": 56.0,            // ~56 GFLOPS on M1 (8 cores, compute-bound, estimated)
         "crypto_multi": 6590,         // 6590 MB/s on M1 (8 cores)
         "compression_multi": 2690,    // 2690 MB/s on M1 (8 cores)
 
