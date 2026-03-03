@@ -55,5 +55,8 @@ Resources/AppIcon.iconset/
 # Test reports
 ~/Desktop/OSX-Bench-Reports/
 
+# Wiki (separate git repo, managed independently)
+wiki/
+
 # Claude Code
 CLAUDE.md
