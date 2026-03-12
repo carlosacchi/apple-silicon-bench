@@ -45,6 +45,9 @@ struct Run: AsyncParsableCommand {
     @Flag(name: .long, help: "Run advanced profiling (memory stride/block sweep, disk QD matrix, CPU scaling)")
     var advanced: Bool = false
 
+    @Option(name: .long, help: "Run N complete benchmark passes and report median scores (default: 1)")
+    var repeats: Int?
+
     func run() async throws {
         // Check privacy policy consent on first run
         guard ConsentManager.ensureConsent(autoAccept: autoAccept) else {
@@ -73,15 +76,44 @@ struct Run: AsyncParsableCommand {
         // Create model manager for AI benchmark
         let modelManager = ModelManager(customModelPath: modelPath, offlineMode: offline)
 
-        let runner = BenchmarkRunner(
-            systemInfo: systemInfo,
-            quickMode: quick,
-            duration: testDuration,
-            selectedBenchmarks: parseSelectedBenchmarks(),
-            modelManager: modelManager
-        )
+        let totalPasses = max(1, repeats ?? 1)
+        let scorer = BenchmarkScorer()
+        var allRuns: [(results: BenchmarkResults, scores: BenchmarkScores)] = []
 
-        let results = try await runner.runAll()
+        for pass in 1...totalPasses {
+            if totalPasses > 1 {
+                print("\n━━━ Pass \(pass) of \(totalPasses) ━━━")
+            }
+
+            let runner = BenchmarkRunner(
+                systemInfo: systemInfo,
+                quickMode: quick,
+                duration: testDuration,
+                selectedBenchmarks: parseSelectedBenchmarks(),
+                modelManager: modelManager
+            )
+
+            let results = try await runner.runAll()
+            let scores = scorer.calculateScores(from: results, coreCount: systemInfo.totalCores)
+            allRuns.append((results: results, scores: scores))
+
+            if totalPasses > 1 {
+                print("  Pass \(pass) total: \(Int(scores.total))")
+            }
+        }
+
+        // Pick the median run by total score
+        let sortedRuns = allRuns.sorted { $0.scores.total < $1.scores.total }
+        let medianIndex = sortedRuns.count / 2
+        let results = sortedRuns[medianIndex].results
+        let scores = sortedRuns[medianIndex].scores
+
+        if totalPasses > 1 {
+            let allTotals = sortedRuns.map { Int($0.scores.total) }
+            print("\n━━━ Repeat Summary ━━━")
+            print("  Scores: \(allTotals.map(String.init).joined(separator: ", "))")
+            print("  Min: \(allTotals.first!) | Median: \(Int(scores.total)) | Max: \(allTotals.last!)")
+        }
 
         // Run advanced profiling if requested
         var advancedResults: AdvancedProfileResults? = nil
@@ -90,11 +122,7 @@ struct Run: AsyncParsableCommand {
             advancedResults = try await runAdvancedProfiles(systemInfo: systemInfo, duration: testDuration)
         }
 
-        // Calculate scores (pass core count for proper multi-core normalization)
-        let scorer = BenchmarkScorer()
-        let scores = scorer.calculateScores(from: results, coreCount: systemInfo.totalCores)
-
-        // Generate HTML report
+        // Generate HTML report (uses median run)
         let reportGenerator = HTMLReportGenerator(
             systemInfo: systemInfo,
             results: results,
@@ -125,6 +153,9 @@ struct Run: AsyncParsableCommand {
         print("\n")
         let isPartialRun = parseSelectedBenchmarks() != nil
         scores.printSummary(quickMode: quick, partialRun: isPartialRun)
+        if totalPasses > 1 {
+            print("  ℹ️  Median of \(totalPasses) passes")
+        }
     }
 
     private func parseSelectedBenchmarks() -> Set<BenchmarkType>? {

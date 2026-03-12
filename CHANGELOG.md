@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-03-12
+
+### Added
+
+- **`--repeats N` option**: Run N complete benchmark passes and report median scores. Reduces variance from thermal fluctuations and background processes. Recommended for publishable results.
+- **A-series chip support**: Added support for Apple A18 Pro (MacBook Neo). All benchmark categories work correctly on A-series chips running macOS.
+
+### Fixed
+
+- **Disk capacity parsing bug**: Fixed TB-to-GB conversion in SystemInfo. Disks reported as "1.0 TB" by diskutil were incorrectly displayed as "1 GB SSD" instead of "1024 GB SSD".
+- **Disk plausibility threshold**: Replaced static 6000 MB/s threshold with dynamic threshold based on SSD capacity. Larger SSDs (1TB+) have more NAND channels and legitimately achieve higher throughput; the old threshold produced false warnings on modern hardware.
+
+### Changed
+
+- **Sequential disk test size**: Increased from 512 MB to 1 GB in full mode to reduce SLC cache influence on modern SSDs.
+- Updated expected scores table with M5, M5 Pro, M4 Max, and A18 Pro (Neo) data from real hardware tests.
+- Updated README and wiki documentation for A-series chip support.
+
 ## [2.1.6] - 2026-03-03
 
 ### Fixed
@@ -470,6 +488,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[2.2.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.2.0
 [2.1.6]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.6
 [2.1.5]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.5
 [2.1.4]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.4

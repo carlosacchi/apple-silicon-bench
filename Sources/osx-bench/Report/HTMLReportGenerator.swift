@@ -547,10 +547,13 @@ struct HTMLReportGenerator {
         var warnings: [String] = []
 
         if let disk = results.result(for: .disk) {
-            let diskSeqThreshold = 6000.0
+            // Dynamic threshold based on SSD capacity: larger SSDs have more NAND channels
+            // and legitimately achieve higher throughput. Base 8000 MB/s + 4000 per TB.
+            let capacityTB = max(1, systemInfo.diskCapacityGB) / 1024
+            let diskSeqThreshold = 8000.0 + Double(capacityTB) * 4000.0
             let diskSeq = disk.tests.filter { $0.name.lowercased().contains("seq") }
             if diskSeq.contains(where: { $0.value > diskSeqThreshold }) {
-                warnings.append("Disk throughput appears unusually high (> \(Int(diskSeqThreshold)) MB/s). This can indicate filesystem cache effects; rerun full mode and verify cache bypass.")
+                warnings.append("Disk throughput appears unusually high (> \(Int(diskSeqThreshold)) MB/s for \(systemInfo.diskCapacityGB >= 1024 ? "\(systemInfo.diskCapacityGB / 1024) TB" : "\(systemInfo.diskCapacityGB) GB") SSD). This can indicate filesystem cache effects; rerun full mode and verify cache bypass.")
             }
         }
 

@@ -352,13 +352,17 @@ struct SystemInfo: Codable {
                         .replacingOccurrences(of: "Device / Media Name:", with: "")
                         .trimmingCharacters(in: .whitespaces)
                 } else if trimmed.hasPrefix("Disk Size:") {
-                    // Parse size like "251.0 GB (..."
+                    // Parse size like "251.0 GB (...)" or "1.0 TB (...)"
                     let sizeStr = trimmed
                         .replacingOccurrences(of: "Disk Size:", with: "")
                         .trimmingCharacters(in: .whitespaces)
                     if let gbRange = sizeStr.range(of: #"[\d.]+"#, options: .regularExpression) {
-                        if let gb = Double(sizeStr[gbRange]) {
-                            capacityGB = Int(gb.rounded())
+                        if let value = Double(sizeStr[gbRange]) {
+                            if sizeStr.contains("TB") {
+                                capacityGB = Int((value * 1024).rounded())
+                            } else {
+                                capacityGB = Int(value.rounded())
+                            }
                         }
                     }
                 } else if trimmed.hasPrefix("Solid State:") {

@@ -10,7 +10,7 @@ struct DiskBenchmark: Benchmark {
     // - Sequential: 4MB blocks
     // - Random: 4KB blocks, QD1 (single operation)
     private let sequentialBlockSize = 4 * 1024 * 1024  // 4 MB (NovaBench standard)
-    private var sequentialSize: Int { quickMode ? 256 * 1024 * 1024 : 512 * 1024 * 1024 }
+    private var sequentialSize: Int { quickMode ? 256 * 1024 * 1024 : 1024 * 1024 * 1024 }
     private let randomBlockSize = 4096  // 4 KB (NovaBench standard)
     // Random file size: must be larger than unified memory cache to avoid cache hits
     // M1 has 8-16GB RAM, so 1GB file in full mode should exceed typical cache
