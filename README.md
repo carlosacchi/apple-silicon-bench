@@ -1,13 +1,13 @@
 # Apple Silicon Bench
 
-**A native macOS benchmark tool for Apple Silicon Macs (M1, M2, M3, M4, M5, M5 Pro, M5 Max, M4 Max, A18 Pro)**
+**A native macOS benchmark tool for Apple Silicon Macs (M-series and A-series)**
 
 [![Release](https://img.shields.io/github/v/release/carlosacchi/apple-silicon-bench)](https://github.com/carlosacchi/apple-silicon-bench/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-macOS-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org/)
 
-A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors. Compare your M1, M2, M3, M4, M5, M5 Pro, M5 Max, and A-series (A18 Pro / MacBook Neo) performance with comprehensive CPU, GPU, memory, disk, and AI benchmarks.
+A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors (M1, M4, M5, M5 Pro, M5 Max, A18 Pro). Supports all M-series and A-series chips with comprehensive CPU, GPU, memory, disk, and AI benchmarks.
 
 ## Features
 
@@ -119,7 +119,19 @@ For detailed methodology, see the [Wiki](https://github.com/carlosacchi/apple-si
 ## Requirements
 
 - macOS 13.0 (Ventura) or later
-- Apple Silicon (M1-M5 family including Pro/Max variants, A-series including A18 Pro / MacBook Neo)
+- Apple Silicon Mac
+
+### Supported Chips
+
+**M-series:**
+M1, M1 Pro, M1 Max, M1 Ultra,
+M2, M2 Pro, M2 Max, M2 Ultra,
+M3, M3 Pro, M3 Max, M3 Ultra,
+M4, M4 Pro, M4 Max,
+M5, M5 Pro, M5 Max
+
+**A-series:**
+A18 Pro (MacBook Neo)
 
 ## Documentation
 
