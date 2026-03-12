@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-macOS-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org/)
 
-A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors (M1, M4, M5, M5 Pro, M5 Max, A18 Pro). Supports all M-series and A-series chips with comprehensive CPU, GPU, memory, disk, and AI benchmarks.
+A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors (M1, M2, M3 Family, M4 Family, M5 Family (like Pro, Max), A18 Pro). Supports all M-series and A-series chips with comprehensive CPU, GPU, memory, disk, and AI benchmarks.
 
 ## Features
 
