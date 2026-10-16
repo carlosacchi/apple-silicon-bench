@@ -348,11 +348,16 @@ struct HTMLReportGenerator {
                     </div>
                     <div class="info-item">
                         <div class="info-label">Cores</div>
-                        <div class="info-value">\(systemInfo.coresPerformance)P + \(systemInfo.coresEfficiency)E</div>
+                        <div class="info-value">\(escapeHTML(systemInfo.coreSummary))</div>
                     </div>
                     <div class="info-item">
                         <div class="info-label">Memory</div>
                         <div class="info-value">\(systemInfo.ramGB) GB</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Storage</div>
+                        <div class="info-value">\(escapeHTML(systemInfo.diskSummary))</div>
+                        <div class="info-label" style="margin: 0.35rem 0 0; text-transform: none; letter-spacing: 0;">\(escapeHTML(systemInfo.diskModel))</div>
                     </div>
                     <div class="info-item">
                         <div class="info-label">macOS</div>
@@ -548,12 +553,13 @@ struct HTMLReportGenerator {
 
         if let disk = results.result(for: .disk) {
             // Dynamic threshold based on SSD capacity: larger SSDs have more NAND channels
-            // and legitimately achieve higher throughput. Base 8000 MB/s + 4000 per TB.
-            let capacityTB = max(1, systemInfo.diskCapacityGB) / 1024
-            let diskSeqThreshold = 8000.0 + Double(capacityTB) * 4000.0
+            // and legitimately achieve higher throughput (M5 Pro/Max class SSDs exceed 8 GB/s
+            // even at 512 GB). Base 10000 MB/s + 4000 per TB (decimal).
+            let capacityTB = Double(max(0, systemInfo.diskCapacityGB)) / 1000
+            let diskSeqThreshold = 10000.0 + capacityTB * 4000.0
             let diskSeq = disk.tests.filter { $0.name.lowercased().contains("seq") }
             if diskSeq.contains(where: { $0.value > diskSeqThreshold }) {
-                warnings.append("Disk throughput appears unusually high (> \(Int(diskSeqThreshold)) MB/s for \(systemInfo.diskCapacityGB >= 1024 ? "\(systemInfo.diskCapacityGB / 1024) TB" : "\(systemInfo.diskCapacityGB) GB") SSD). This can indicate filesystem cache effects; rerun full mode and verify cache bypass.")
+                warnings.append("Disk throughput appears unusually high (> \(Int(diskSeqThreshold)) MB/s for \(systemInfo.diskCapacityDescription) SSD). This can indicate filesystem cache effects; rerun full mode and verify cache bypass.")
             }
         }
 

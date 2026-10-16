@@ -1,16 +1,29 @@
 import Foundation
 
+/// One CPU performance level as reported by the kernel (hw.perflevelN.*)
+struct CoreLevel: Codable {
+    let name: String   // e.g. "Performance", "Efficiency"
+    let count: Int
+
+    /// Single-letter abbreviation used in compact output (e.g. "P", "E")
+    var abbreviation: String {
+        name.first.map { String($0).uppercased() } ?? "?"
+    }
+}
+
 struct SystemInfo: Codable {
     let machineId: String
     let chip: String
-    let coresPerformance: Int
-    let coresEfficiency: Int
+    let coresPerformance: Int  // Cores in the fastest performance level (perflevel0)
+    let coresEfficiency: Int   // Cores in all remaining performance levels
     let totalCores: Int
+    let coreLevels: [CoreLevel]
     let ramGB: Int
     let osVersion: String
     let modelIdentifier: String
+    let diskVendor: String
     let diskModel: String
-    let diskCapacityGB: Int
+    let diskCapacityGB: Int  // Decimal GB (1 GB = 10^9 bytes), as reported by diskutil
     let diskType: String  // "SSD" or "HDD"
     let gpuModel: String
     let gpuCores: Int
@@ -22,7 +35,9 @@ struct SystemInfo: Codable {
     static func gather() throws -> SystemInfo {
         let machineId = getMachineId()
         let chip = getChipName()
-        let (pCores, eCores) = getCoreCount()
+        let coreLevels = getCoreLevels()
+        let pCores = coreLevels.first?.count ?? 0
+        let totalCores = coreLevels.reduce(0) { $0 + $1.count }
         let ram = getRAMSize()
         let os = getOSVersion()
         let model = getModelIdentifier()
@@ -34,11 +49,13 @@ struct SystemInfo: Codable {
             machineId: machineId,
             chip: chip,
             coresPerformance: pCores,
-            coresEfficiency: eCores,
-            totalCores: pCores + eCores,
+            coresEfficiency: totalCores - pCores,
+            totalCores: totalCores,
+            coreLevels: coreLevels,
             ramGB: ram,
             osVersion: os,
             modelIdentifier: model,
+            diskVendor: diskInfo.vendor,
             diskModel: diskInfo.model,
             diskCapacityGB: diskInfo.capacityGB,
             diskType: diskInfo.type,
@@ -51,6 +68,26 @@ struct SystemInfo: Codable {
         )
     }
 
+    // MARK: - Display
+
+    /// Compact core layout, e.g. "4P + 4E (8 total)"
+    var coreSummary: String {
+        let layout = coreLevels.map { "\($0.count)\($0.abbreviation)" }.joined(separator: " + ")
+        return coreLevels.count > 1 ? "\(layout) (\(totalCores) total)" : "\(totalCores) cores"
+    }
+
+    /// Disk capacity, e.g. "251 GB" or "1 TB" / "2.5 TB"
+    var diskCapacityDescription: String {
+        guard diskCapacityGB >= 1000 else { return "\(diskCapacityGB) GB" }
+        let tb = Double(diskCapacityGB) / 1000
+        return tb.rounded() == tb ? "\(Int(tb)) TB" : String(format: "%.1f TB", tb)
+    }
+
+    /// Disk summary, e.g. "251 GB SSD"
+    var diskSummary: String {
+        "\(diskCapacityDescription) \(diskType)"
+    }
+
     func printBrief() {
         let thermal = ThermalMonitor.currentState()
         let line = String(repeating: "─", count: 44)
@@ -58,84 +95,62 @@ struct SystemInfo: Codable {
         print("  System Information")
         print(line)
         print(dotPad("Chip", chip))
-        print(dotPad("Cores", "\(coresPerformance)P + \(coresEfficiency)E (\(totalCores) total)"))
+        print(dotPad("Cores", coreSummary))
         print(dotPad("RAM", "\(ramGB) GB"))
+        print(dotPad("Disk", diskSummary))
+        print(dotPad("Disk Brand", diskVendor))
+        print(dotPad("Disk Model", diskModel))
         print(dotPad("macOS", osVersion))
         print(dotPad("Thermal", "\(thermal.emoji) \(thermal.description)"))
         print(line)
     }
 
     func printExtended() {
-        let diskSummary = "\(diskCapacityGB) GB \(diskType)"
-        let line = String(repeating: "─", count: 50)
-        print()
-        print(line)
-        print("  System Information (Extended)")
-        print(line)
-        print(dotPad("Chip", chip, width: 50))
-        print(dotPad("P-Cores", String(coresPerformance), width: 50))
-        print(dotPad("E-Cores", String(coresEfficiency), width: 50))
-        print(dotPad("Total Cores", String(totalCores), width: 50))
-        print(dotPad("RAM", "\(ramGB) GB", width: 50))
-        print(dotPad("Disk", diskSummary, width: 50))
-        print(dotPad("Disk Model", diskModel, width: 50))
-        print(dotPad("macOS", osVersion, width: 50))
-        print(dotPad("Model", modelIdentifier, width: 50))
-        
-        // GPU Information
-        print(dotPad("GPU", gpuModel, width: 50))
-        print(dotPad("GPU Cores", String(gpuCores), width: 50))
-        print(dotPad("Metal", gpuMetalVersion, width: 50))
-        
-        // Battery Information (if available)
-        if let cycleCount = batteryCycleCount {
-            print(dotPad("Battery Cycles", String(cycleCount), width: 50))
-        }
-        if let health = batteryHealth {
-            print(dotPad("Battery Health", health, width: 50))
-        }
-        if let chargingStatus = batteryChargingStatus {
-            print(dotPad("Battery Status", chargingStatus, width: 50))
-        }
-        
-        print(line)
-        print()
+        printDetailed(title: "System Information (Extended)", includeMachineId: false)
     }
 
     func printSensitive() {
-        let diskSummary = "\(diskCapacityGB) GB \(diskType)"
-        let line = String(repeating: "─", count: 50)
+        printDetailed(title: "System Information (Sensitive - Includes Machine ID)", includeMachineId: true)
+    }
+
+    private func printDetailed(title: String, includeMachineId: Bool) {
+        let width = 50
+        let line = String(repeating: "─", count: width)
         print()
         print(line)
-        print("  System Information (Sensitive - Includes Machine ID)")
+        print("  \(title)")
         print(line)
-        print(dotPad("Machine ID", machineId, width: 50))
-        print(dotPad("Chip", chip, width: 50))
-        print(dotPad("P-Cores", String(coresPerformance), width: 50))
-        print(dotPad("E-Cores", String(coresEfficiency), width: 50))
-        print(dotPad("Total Cores", String(totalCores), width: 50))
-        print(dotPad("RAM", "\(ramGB) GB", width: 50))
-        print(dotPad("Disk", diskSummary, width: 50))
-        print(dotPad("Disk Model", diskModel, width: 50))
-        print(dotPad("macOS", osVersion, width: 50))
-        print(dotPad("Model", modelIdentifier, width: 50))
-        
+        if includeMachineId {
+            print(dotPad("Machine ID", machineId, width: width))
+        }
+        print(dotPad("Chip", chip, width: width))
+        for level in coreLevels {
+            print(dotPad("\(level.name) Cores", String(level.count), width: width))
+        }
+        print(dotPad("Total Cores", String(totalCores), width: width))
+        print(dotPad("RAM", "\(ramGB) GB", width: width))
+        print(dotPad("Disk", diskSummary, width: width))
+        print(dotPad("Disk Brand", diskVendor, width: width))
+        print(dotPad("Disk Model", diskModel, width: width))
+        print(dotPad("macOS", osVersion, width: width))
+        print(dotPad("Model", modelIdentifier, width: width))
+
         // GPU Information
-        print(dotPad("GPU", gpuModel, width: 50))
-        print(dotPad("GPU Cores", String(gpuCores), width: 50))
-        print(dotPad("Metal", gpuMetalVersion, width: 50))
-        
+        print(dotPad("GPU", gpuModel, width: width))
+        print(dotPad("GPU Cores", String(gpuCores), width: width))
+        print(dotPad("Metal", gpuMetalVersion, width: width))
+
         // Battery Information (if available)
         if let cycleCount = batteryCycleCount {
-            print(dotPad("Battery Cycles", String(cycleCount), width: 50))
+            print(dotPad("Battery Cycles", String(cycleCount), width: width))
         }
         if let health = batteryHealth {
-            print(dotPad("Battery Health", health, width: 50))
+            print(dotPad("Battery Health", health, width: width))
         }
         if let chargingStatus = batteryChargingStatus {
-            print(dotPad("Battery Status", chargingStatus, width: 50))
+            print(dotPad("Battery Charging", chargingStatus, width: width))
         }
-        
+
         print(line)
         print()
     }
@@ -272,34 +287,38 @@ struct SystemInfo: Codable {
         return String(cString: chipName)
     }
 
-    private static func getCoreCount() -> (performance: Int, efficiency: Int) {
-        // Try to get Apple Silicon specific core counts
-        var pCores = 0
-        var eCores = 0
+    /// Reads every CPU performance level from the kernel instead of assuming a fixed
+    /// P/E split, so chips with renamed or additional core tiers are reported correctly.
+    private static func getCoreLevels() -> [CoreLevel] {
+        let levelCount = sysctlInt("hw.nperflevels") ?? 0
 
-        var size = MemoryLayout<Int32>.size
+        var levels: [CoreLevel] = []
+        for index in 0..<levelCount {
+            guard let count = sysctlInt("hw.perflevel\(index).logicalcpu"), count > 0 else { continue }
+            let name = sysctlString("hw.perflevel\(index).name") ?? (index == 0 ? "Performance" : "Efficiency")
+            levels.append(CoreLevel(name: name, count: count))
+        }
+
+        // Fallback to total count if per-level counts are not available
+        if levels.isEmpty {
+            levels = [CoreLevel(name: "CPU", count: sysctlInt("hw.ncpu") ?? 1)]
+        }
+        return levels
+    }
+
+    private static func sysctlInt(_ name: String) -> Int? {
         var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname(name, &value, &size, nil, 0) == 0 else { return nil }
+        return Int(value)
+    }
 
-        // Performance cores
-        if sysctlbyname("hw.perflevel0.logicalcpu", &value, &size, nil, 0) == 0 {
-            pCores = Int(value)
-        }
-
-        // Efficiency cores
-        size = MemoryLayout<Int32>.size
-        if sysctlbyname("hw.perflevel1.logicalcpu", &value, &size, nil, 0) == 0 {
-            eCores = Int(value)
-        }
-
-        // Fallback to total count if specific counts not available
-        if pCores == 0 && eCores == 0 {
-            size = MemoryLayout<Int32>.size
-            sysctlbyname("hw.ncpu", &value, &size, nil, 0)
-            pCores = Int(value)
-            eCores = 0
-        }
-
-        return (pCores, eCores)
+    private static func sysctlString(_ name: String) -> String? {
+        var size = 0
+        guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
+        return String(cString: buffer)
     }
 
     private static func getRAMSize() -> Int {
@@ -322,58 +341,90 @@ struct SystemInfo: Codable {
         return String(cString: model)
     }
 
-    private static func getDiskInfo() -> (model: String, capacityGB: Int, type: String) {
-        // Use diskutil to get disk information
+    private static func runDiskutil(_ arguments: [String]) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-        process.arguments = ["info", "disk0"]
+        process.arguments = arguments
 
         let pipe = Pipe()
         process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
-            process.waitUntilExit()
-
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard let output = String(data: data, encoding: .utf8) else {
-                return ("Unknown", 0, "Unknown")
-            }
-
-            var model = "Unknown"
-            var capacityGB = 0
-            var isSSD = false
-
-            for line in output.components(separatedBy: "\n") {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-                if trimmed.hasPrefix("Device / Media Name:") {
-                    model = trimmed
-                        .replacingOccurrences(of: "Device / Media Name:", with: "")
-                        .trimmingCharacters(in: .whitespaces)
-                } else if trimmed.hasPrefix("Disk Size:") {
-                    // Parse size like "251.0 GB (...)" or "1.0 TB (...)"
-                    let sizeStr = trimmed
-                        .replacingOccurrences(of: "Disk Size:", with: "")
-                        .trimmingCharacters(in: .whitespaces)
-                    if let gbRange = sizeStr.range(of: #"[\d.]+"#, options: .regularExpression) {
-                        if let value = Double(sizeStr[gbRange]) {
-                            if sizeStr.contains("TB") {
-                                capacityGB = Int((value * 1024).rounded())
-                            } else {
-                                capacityGB = Int(value.rounded())
-                            }
-                        }
-                    }
-                } else if trimmed.hasPrefix("Solid State:") {
-                    isSSD = trimmed.contains("Yes")
-                }
-            }
-
-            return (model, capacityGB, isSSD ? "SSD" : "HDD")
+            process.waitUntilExit()
+            return String(data: data, encoding: .utf8)
         } catch {
-            return ("Unknown", 0, "Unknown")
+            return nil
         }
+    }
+
+    private static func diskutilValue(_ key: String, in output: String) -> String? {
+        for line in output.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("\(key):") {
+                return String(trimmed.dropFirst(key.count + 1)).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
+    }
+
+    /// Physical disk backing the boot volume (where the disk benchmark writes its temp files).
+    /// APFS volumes live on a synthesized container, so follow "APFS Physical Store" back to the device.
+    private static func getBootPhysicalDisk() -> String {
+        guard let output = runDiskutil(["info", "/"]) else { return "disk0" }
+        let store = diskutilValue("APFS Physical Store", in: output) ?? diskutilValue("Part of Whole", in: output)
+        guard let store = store,
+              let range = store.range(of: #"^disk\d+"#, options: .regularExpression) else {
+            return "disk0"
+        }
+        return String(store[range])
+    }
+
+    private static func getDiskInfo() -> (vendor: String, model: String, capacityGB: Int, type: String) {
+        guard let output = runDiskutil(["info", getBootPhysicalDisk()]) else {
+            return ("Unknown", "Unknown", 0, "Unknown")
+        }
+
+        let model = diskutilValue("Device / Media Name", in: output) ?? "Unknown"
+        let isSSD = diskutilValue("Solid State", in: output)?.hasPrefix("Yes") ?? false
+
+        // "Disk Size: 251.0 GB (251000193024 Bytes) (...)" - use the exact byte count
+        var capacityGB = 0
+        if let size = diskutilValue("Disk Size", in: output),
+           let match = size.range(of: #"\((\d+) Bytes\)"#, options: .regularExpression) {
+            let bytes = Double(size[match].filter(\.isNumber)) ?? 0
+            capacityGB = Int((bytes / 1_000_000_000).rounded())
+        }
+
+        return (diskVendor(fromModel: model), model, capacityGB, isSSD ? "SSD" : "HDD")
+    }
+
+    /// Derives the manufacturer from the drive's media name (e.g. "APPLE SSD AP0256Q" -> "Apple")
+    static func diskVendor(fromModel model: String) -> String {
+        let knownVendors: [String: String] = [
+            "APPLE": "Apple", "SAMSUNG": "Samsung", "WDC": "Western Digital", "WD": "Western Digital",
+            "SANDISK": "SanDisk", "CRUCIAL": "Crucial", "CT": "Crucial", "KINGSTON": "Kingston",
+            "SEAGATE": "Seagate", "ST": "Seagate", "TOSHIBA": "Toshiba", "KIOXIA": "Kioxia",
+            "INTEL": "Intel", "SK": "SK hynix", "HYNIX": "SK hynix", "SABRENT": "Sabrent",
+            "LACIE": "LaCie", "OWC": "OWC", "TEAM": "Team Group", "LEXAR": "Lexar", "MICRON": "Micron",
+        ]
+        let tokens = model.split(whereSeparator: { $0 == " " || $0 == "_" || $0 == "-" })
+        guard let first = tokens.first, model != "Unknown" else { return "Unknown" }
+
+        let key = first.uppercased()
+        if let vendor = knownVendors[key] {
+            return vendor
+        }
+        // Bare part numbers with a vendor prefix, e.g. "CT1000P3SSD8" (Crucial), "ST2000DM008" (Seagate)
+        let prefix = String(key.prefix(2))
+        if key.dropFirst(2).first?.isNumber == true, let vendor = knownVendors[prefix] {
+            return vendor
+        }
+        // Otherwise assume the first word is the brand ("Sabrent Rocket 4" -> "Sabrent")
+        guard tokens.count > 1 else { return "Unknown" }
+        return first.prefix(1).uppercased() + first.dropFirst().lowercased()
     }
 
     // MARK: - Privacy-Safe Export Version
@@ -385,9 +436,11 @@ struct SystemInfo: Codable {
             coresPerformance: coresPerformance,
             coresEfficiency: coresEfficiency,
             totalCores: totalCores,
+            coreLevels: coreLevels,
             ramGB: ramGB,
             osVersion: osVersion,
             modelIdentifier: modelIdentifier,
+            diskVendor: diskVendor,
             diskModel: diskModel,
             diskCapacityGB: diskCapacityGB,
             diskType: diskType
@@ -401,9 +454,11 @@ struct SystemInfoExport: Codable {
     let coresPerformance: Int
     let coresEfficiency: Int
     let totalCores: Int
+    let coreLevels: [CoreLevel]
     let ramGB: Int
     let osVersion: String
     let modelIdentifier: String
+    let diskVendor: String
     let diskModel: String
     let diskCapacityGB: Int
     let diskType: String
