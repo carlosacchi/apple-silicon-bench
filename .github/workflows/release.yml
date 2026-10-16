@@ -55,7 +55,7 @@ jobs:
         body: |
           ## Apple Silicon Bench ${{ steps.version.outputs.VERSION }}
 
-          Benchmark tool for M1, M2, M3, M4, M5 Apple Silicon Macs.
+          Benchmark tool for Apple Silicon Macs (M1-M6 families and A-series).
 
           ### Download
 

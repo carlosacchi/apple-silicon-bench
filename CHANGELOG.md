@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-10-16
+
+### Added
+
+- **Disk details in `osx-bench info` and the run header**: The brief system information now shows disk capacity and type, brand and model (e.g. `251 GB SSD`, `Apple`, `APPLE SSD AP0256Q`). Previously these were only visible with `--extended`.
+- **Storage in HTML reports**: The report header now includes disk capacity, type and model.
+- **`--only cpu` alias**: Runs both CPU single-core and multi-core benchmarks.
+- **Generic CPU core-tier detection**: Cores are read from every kernel performance level (`hw.nperflevels`, `hw.perflevelN.name`) instead of assuming exactly two P/E clusters. Extended info lists each tier by its kernel name, and JSON exports include a new `coreLevels` array. `coresPerformance`/`coresEfficiency` are kept for compatibility.
+- **M5 Ultra and M6 support**: Added to the supported chip list. Expected score table updated with M5 Max, M5 Pro and M6 results from real hardware.
+- `diskVendor` field in JSON exports.
+
+### Changed
+
+- **Privacy notice**: The consent box is wider so the policy URL no longer overflows the border. It now names the actual model source (~17MB MobileNetV2 from `ml-assets.apple.com`, not "~5MB from GitHub"), mentions that Chart.js is loaded from jsDelivr and shows where consent is stored. Because this is a MINOR release, existing users will be asked to accept again.
+- **Disk detection**: The disk is resolved from the APFS physical store of the boot volume (where the disk benchmark writes) instead of assuming `disk0`.
+- **Disk plausibility threshold**: Raised to 10000 MB/s + 4000 MB/s per TB to avoid false warnings on M5 Pro/Max-class SSDs.
+- Extended info label `Battery Status` renamed to `Battery Charging`, which matches what the value represents.
+- `info --extended` and `info --sensitive` share one implementation.
+
+### Fixed
+
+- **Invalid `--only` values were silently ignored** ([#1](https://github.com/carlosacchi/apple-silicon-bench/issues/1)): `--only cpu,memory,disk` used to skip the CPU without warning, and `--only garbage` ran every benchmark. Unknown or empty values now abort with an error that lists the valid names.
+- **`--repeats 0` or negative** is now rejected instead of being silently treated as 1.
+- **Disk capacity unit mix-up**: Capacity is computed from the exact byte count reported by `diskutil` in decimal GB. Before, `GB` sizes were decimal but `TB` sizes were multiplied by 1024, so a 1 TB disk showed as 1024 GB.
+- **Disk plausibility check on sub-1 TB disks**: Integer division turned the capacity into 0 TB, so the lowest threshold was applied.
+- **Multi-core benchmarks on chips with more than two core tiers** now spawn one worker per logical CPU across all tiers instead of only the first two.
+
+### Security
+
+- Strict CLI input validation for `--only`/`--repeats` (CWE-20). See SECURITY.md.
+
 ## [2.2.0] - 2026-03-12
 
 ### Added
@@ -488,6 +519,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[2.3.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.3.0
 [2.2.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.2.0
 [2.1.6]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.6
 [2.1.5]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.5
