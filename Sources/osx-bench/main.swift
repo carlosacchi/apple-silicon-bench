@@ -18,7 +18,7 @@ struct Run: AsyncParsableCommand {
         abstract: "Run benchmarks"
     )
 
-    @Option(name: .long, help: "Run only specific benchmarks (cpu-single,cpu-multi,memory,disk,gpu,ai)")
+    @Option(name: .long, help: "Run only specific benchmarks, comma-separated (cpu,cpu-single,cpu-multi,memory,disk,gpu,ai)")
     var only: String?
 
     @Flag(name: .long, help: "Quick mode with reduced iterations (~3s per test)")
@@ -48,7 +48,18 @@ struct Run: AsyncParsableCommand {
     @Option(name: .long, help: "Run N complete benchmark passes and report median scores (default: 1)")
     var repeats: Int?
 
+    func validate() throws {
+        // Reject unknown --only values up front instead of silently ignoring them
+        _ = try parseSelectedBenchmarks()
+
+        if let repeats = repeats, repeats < 1 {
+            throw ValidationError("--repeats must be at least 1.")
+        }
+    }
+
     func run() async throws {
+        let selectedBenchmarks = try parseSelectedBenchmarks()
+
         // Check privacy policy consent on first run
         guard ConsentManager.ensureConsent(autoAccept: autoAccept) else {
             throw ExitCode.failure
@@ -89,7 +100,7 @@ struct Run: AsyncParsableCommand {
                 systemInfo: systemInfo,
                 quickMode: quick,
                 duration: testDuration,
-                selectedBenchmarks: parseSelectedBenchmarks(),
+                selectedBenchmarks: selectedBenchmarks,
                 modelManager: modelManager
             )
 
@@ -151,27 +162,52 @@ struct Run: AsyncParsableCommand {
 
         // Print final scores
         print("\n")
-        let isPartialRun = parseSelectedBenchmarks() != nil
+        let isPartialRun = selectedBenchmarks != nil
         scores.printSummary(quickMode: quick, partialRun: isPartialRun)
         if totalPasses > 1 {
             print("  ℹ️  Median of \(totalPasses) passes")
         }
     }
 
-    private func parseSelectedBenchmarks() -> Set<BenchmarkType>? {
+    /// Accepted --only values (including aliases) and the benchmarks each one selects
+    private static let benchmarkAliases: [(names: [String], types: [BenchmarkType])] = [
+        (["cpu"], [.cpuSingleCore, .cpuMultiCore]),
+        (["cpu-single", "cpusingle"], [.cpuSingleCore]),
+        (["cpu-multi", "cpumulti"], [.cpuMultiCore]),
+        (["memory", "ram"], [.memory]),
+        (["disk", "storage"], [.disk]),
+        (["gpu", "metal"], [.gpu]),
+        (["ai", "ml", "neural", "coreml"], [.ai]),
+    ]
+
+    private func parseSelectedBenchmarks() throws -> Set<BenchmarkType>? {
         guard let only = only else { return nil }
-        let types = only.split(separator: ",").compactMap { name -> BenchmarkType? in
-            switch name.lowercased().trimmingCharacters(in: .whitespaces) {
-            case "cpu-single", "cpusingle": return .cpuSingleCore
-            case "cpu-multi", "cpumulti": return .cpuMultiCore
-            case "memory", "ram": return .memory
-            case "disk", "storage": return .disk
-            case "gpu", "metal": return .gpu
-            case "ai", "ml", "neural", "coreml": return .ai
-            default: return nil
+
+        var selected = Set<BenchmarkType>()
+        var invalid: [String] = []
+
+        let validNames = Self.benchmarkAliases.map { $0.names[0] }.joined(separator: ", ")
+        let names = only.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty }
+
+        guard !names.isEmpty else {
+            throw ValidationError("--only requires at least one benchmark. Valid values: \(validNames)")
+        }
+
+        for name in names {
+            if let match = Self.benchmarkAliases.first(where: { $0.names.contains(name) }) {
+                selected.formUnion(match.types)
+            } else {
+                invalid.append(name)
             }
         }
-        return types.isEmpty ? nil : Set(types)
+
+        guard invalid.isEmpty else {
+            let label = invalid.count == 1 ? "Invalid benchmark" : "Invalid benchmarks"
+            throw ValidationError("\(label) for --only: \(invalid.joined(separator: ", ")). Valid values: \(validNames)")
+        }
+        return selected
     }
 
     private func calculateDuration() -> Int {
