@@ -4,8 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.2.x   | :white_check_mark: |
-| < 1.2   | :x:                |
+| 2.3.x   | :white_check_mark: |
+| < 2.3   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -19,6 +19,11 @@ We aim to respond within 48 hours and provide a fix within 7 days for critical i
 ---
 
 ## Security Measures Implemented
+
+### v2.3.0
+- Strict validation of `--only` and `--repeats` CLI input: unknown values now abort with an error instead of being silently ignored (CWE-20)
+- Privacy notice corrected to match actual network access (Apple ML assets model download, Chart.js via jsDelivr) and to show where consent is stored
+- Disk detection queries the physical store of the boot volume via `diskutil` (fixed argument list, no shell, stderr discarded)
 
 ### v1.2.5
 - Memory allocation validation against system RAM (CWE-770)
@@ -166,6 +171,7 @@ User Input (CLI) → Benchmark Runner → System APIs → Results
 | Date | Auditor | Findings | Resolution |
 |------|---------|----------|------------|
 | 2026-01-01 | Internal | 8 issues identified | 5 fixed, 3 accepted |
+| 2026-10-16 | Internal | 1 issue (CLI input validation, GitHub #1) | 1 fixed in v2.3.0 |
 
 ---
 

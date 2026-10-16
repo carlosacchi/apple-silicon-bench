@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-macOS-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org/)
 
-A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors (M1, M2, M3 Family, M4 Family, M5 Family (like Pro, Max), A18 Pro). Supports all M-series and A-series chips with comprehensive CPU, GPU, memory, disk, and AI benchmarks.
+A lightweight, native Swift benchmark tool designed specifically for Apple Silicon processors (M1, M2, M3, M4 and M5 families including Pro, Max and Ultra, M6, A18 Pro). Supports all M-series and A-series chips with comprehensive CPU, GPU, memory, disk, and AI benchmarks.
 
 ## Features
 
@@ -55,10 +55,12 @@ osx-bench run --duration 30
 # Stress test (60s per test)
 osx-bench run --stress
 
-# Selective benchmarks
+# Selective benchmarks (cpu, cpu-single, cpu-multi, memory, disk, gpu, ai)
+osx-bench run --only cpu          # CPU single-core + multi-core
 osx-bench run --only cpu-single,gpu
 osx-bench run --only memory,disk
 osx-bench run --only ai
+# Unknown names are rejected with an error (v2.3.0+)
 
 # AI benchmark options
 osx-bench run --only ai --model-path /path/to/model.mlmodelc
@@ -70,9 +72,9 @@ osx-bench run --advanced  # Stride sweep, QD matrix, thread scaling
 # Multiple passes with median (v2.2.0+)
 osx-bench run --repeats 3  # Run 3 passes, report median scores
 
-# System info
+# System info (chip, cores, RAM, disk brand/model/capacity, thermal)
 osx-bench info
-osx-bench info --extended
+osx-bench info --extended  # + GPU, battery, model identifier
 
 # Export results
 osx-bench run --export results.json
@@ -94,6 +96,8 @@ osx-bench run --export results.json
 | M5 | ~2000 |
 | M5 Pro | ~2650-2850 |
 | M4 Max | ~2870 |
+| M5 Max | ~3180 |
+| M6 | ~2090 |
 | A18 Pro (Neo) | ~1165 |
 
 > **Note on Disk scores:** SSD capacity directly affects disk benchmark results. Larger SSDs (512GB, 1TB+) have more NAND channels working in parallel, producing higher throughput than smaller SSDs (256GB). Disk scores are clamped (0.25x-4.0x vs baseline) to limit this effect, but comparisons across different SSD capacities should account for this hardware difference.
@@ -128,7 +132,8 @@ M1, M1 Pro, M1 Max, M1 Ultra,
 M2, M2 Pro, M2 Max, M2 Ultra,
 M3, M3 Pro, M3 Max, M3 Ultra,
 M4, M4 Pro, M4 Max,
-M5, M5 Pro, M5 Max
+M5, M5 Pro, M5 Max, M5 Ultra,
+M6
 
 **A-series:**
 A18 Pro (MacBook Neo)
