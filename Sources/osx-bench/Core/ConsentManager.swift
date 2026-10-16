@@ -4,6 +4,7 @@ import Foundation
 
 struct ConsentManager {
     private static let consentFileName = "privacy-consent"
+    private static let privacyPolicyURL = "\(AppInfo.repository)/wiki/Privacy-Policy"
 
     private static var consentDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -75,26 +76,49 @@ struct ConsentManager {
         try content.write(to: consentFilePath, atomically: true, encoding: String.Encoding.utf8)
     }
 
+    // MARK: - Consent Box
+
+    /// Inner width of the consent box; must fit the longest line (the policy URL)
+    private static let boxWidth = 76
+
+    private static func boxLine(_ text: String = "") -> String {
+        "║" + text + String(repeating: " ", count: max(0, boxWidth - text.count)) + "║"
+    }
+
+    private static func boxTitle(_ title: String) -> String {
+        let leftPadding = max(0, (boxWidth - title.count) / 2)
+        return boxLine(String(repeating: " ", count: leftPadding) + title)
+    }
+
     /// Display privacy consent prompt and return true if accepted
     static func requestConsent() -> Bool {
+        let border = String(repeating: "═", count: boxWidth)
+        let lines = [
+            "",
+            "  Apple Silicon Bench respects your privacy:",
+            "",
+            "  • No personal data is collected",
+            "  • No telemetry or analytics",
+            "  • All results stay on your device",
+            "  • Open source - verify the code yourself",
+            "",
+            "  The AI benchmark may download a ~17MB CoreML model from Apple",
+            "  (ml-assets.apple.com). HTML reports load Chart.js from jsDelivr.",
+            "",
+            "  Your choice is saved locally in:",
+            "  ~/Library/Application Support/osx-bench/\(consentFileName)",
+            "",
+            "  Full privacy policy:",
+            "  \(privacyPolicyURL)",
+            "",
+        ]
+
         print("")
-        print("╔══════════════════════════════════════════════════════════════════╗")
-        print("║                     PRIVACY POLICY NOTICE                        ║")
-        print("╠══════════════════════════════════════════════════════════════════╣")
-        print("║                                                                  ║")
-        print("║  Apple Silicon Bench respects your privacy:                      ║")
-        print("║                                                                  ║")
-        print("║  • No personal data is collected                                 ║")
-        print("║  • No telemetry or analytics                                     ║")
-        print("║  • All results stay on your device                               ║")
-        print("║  • Open source - verify the code yourself                        ║")
-        print("║                                                                  ║")
-        print("║  The AI benchmark may download a ~5MB model from GitHub.         ║")
-        print("║                                                                  ║")
-        print("║  Full privacy policy:                                            ║")
-        print("║  https://github.com/carlosacchi/apple-silicon-bench/wiki/Privacy-Policy")
-        print("║                                                                  ║")
-        print("╚══════════════════════════════════════════════════════════════════╝")
+        print("╔\(border)╗")
+        print(boxTitle("PRIVACY POLICY NOTICE"))
+        print("╠\(border)╣")
+        lines.forEach { print(boxLine($0)) }
+        print("╚\(border)╝")
         print("")
         print("Do you accept the privacy policy? (y/n): ", terminator: "")
 
