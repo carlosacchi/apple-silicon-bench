@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-10-29
+
+### Changed
+
+- **SIMD Multi now uses per-core NEON code instead of Accelerate (`vDSP`)** (scoring change). On Apple Silicon `vDSP` can run on a matrix unit shared by each CPU cluster, so the old test did not scale with core count and got slower as threads were added. On an M6 (2S + 4P + 6E) it dropped from ~80 GFLOPS with 6 threads (v2.2.0) to ~59 GFLOPS with 12 threads (v2.3.0). On an M1 `vDSP` saturated at ~42 GFLOPS while NEON reached ~80-100 GFLOPS with 8 threads. The workload (multiply-add, add, dot product on 8K floats per core) and the FLOP accounting are unchanged.
+- **`simd_multi` baseline recalibrated on M1** (MacBook Air, 8 GB): 100.1 GFLOPS, the median of 5 full-mode runs with a cooldown between them. The previous value (56) was an estimate. **CPU Multi-Core and Total scores are not comparable with earlier versions**: M1 moves to ~1000 as intended, and chips with many cores (Pro/Max/Ultra, M6) score higher than before.
+- JSON exports: `coresPerformance` now counts every non-efficiency tier and `coresEfficiency` counts only the efficiency tier. On an M6 this gives 6 + 6 instead of 2 + 10 (the 4 "Performance" cores were counted as efficiency cores). `coreLevels` is unchanged.
+
+### Fixed
+
+- **HTML report date followed the system language** (e.g. `28 oktober 2026 om 12:54:11` on a Dutch system) while the rest of the report is in English. It is now always formatted in English. The report file name timestamp uses a fixed POSIX locale.
+
 ## [2.3.0] - 2026-10-16
 
 ### Added
@@ -519,6 +531,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[2.4.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.4.0
 [2.3.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.3.0
 [2.2.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.2.0
 [2.1.6]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.1.6
