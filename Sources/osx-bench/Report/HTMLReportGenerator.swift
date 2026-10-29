@@ -32,6 +32,7 @@ struct HTMLReportGenerator {
 
     func generate() throws -> String {
         let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
         dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let timestamp = dateFormatter.string(from: results.timestamp)
 
@@ -51,6 +52,7 @@ struct HTMLReportGenerator {
 
     private func generateHTML() -> String {
         let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US")
         dateFormatter.dateStyle = .long
         dateFormatter.timeStyle = .medium
         let formattedDate = dateFormatter.string(from: results.timestamp)
