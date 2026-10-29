@@ -97,8 +97,10 @@ osx-bench run --export results.json
 | M5 Pro | ~2650-2850 |
 | M4 Max | ~2870 |
 | M5 Max | ~3180 |
-| M6 | ~2090 |
+| M6 | ~2230 |
 | A18 Pro (Neo) | ~1165 |
+
+> **Note on v2.4.0:** SIMD Multi was rewritten (per-core NEON instead of `vDSP`) and its M1 baseline recalibrated, so CPU Multi-Core and Total scores changed. The values above come from v2.2/v2.3 runs (M6 from v2.3.0). Chips with many cores (Pro/Max/Ultra, M6) score higher with v2.4.0.
 
 > **Note on Disk scores:** SSD capacity directly affects disk benchmark results. Larger SSDs (512GB, 1TB+) have more NAND channels working in parallel, producing higher throughput than smaller SSDs (256GB). Disk scores are clamped (0.25x-4.0x vs baseline) to limit this effect, but comparisons across different SSD capacities should account for this hardware difference.
 
