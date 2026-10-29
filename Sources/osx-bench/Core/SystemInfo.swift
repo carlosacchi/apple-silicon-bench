@@ -14,8 +14,8 @@ struct CoreLevel: Codable {
 struct SystemInfo: Codable {
     let machineId: String
     let chip: String
-    let coresPerformance: Int  // Cores in the fastest performance level (perflevel0)
-    let coresEfficiency: Int   // Cores in all remaining performance levels
+    let coresPerformance: Int  // Cores in every non-efficiency level (e.g. Super + Performance)
+    let coresEfficiency: Int   // Cores in the efficiency level
     let totalCores: Int
     let coreLevels: [CoreLevel]
     let ramGB: Int
@@ -36,8 +36,8 @@ struct SystemInfo: Codable {
         let machineId = getMachineId()
         let chip = getChipName()
         let coreLevels = getCoreLevels()
-        let pCores = coreLevels.first?.count ?? 0
         let totalCores = coreLevels.reduce(0) { $0 + $1.count }
+        let eCores = efficiencyCoreCount(in: coreLevels)
         let ram = getRAMSize()
         let os = getOSVersion()
         let model = getModelIdentifier()
@@ -48,8 +48,8 @@ struct SystemInfo: Codable {
         return SystemInfo(
             machineId: machineId,
             chip: chip,
-            coresPerformance: pCores,
-            coresEfficiency: totalCores - pCores,
+            coresPerformance: totalCores - eCores,
+            coresEfficiency: eCores,
             totalCores: totalCores,
             coreLevels: coreLevels,
             ramGB: ram,
@@ -304,6 +304,18 @@ struct SystemInfo: Codable {
             levels = [CoreLevel(name: "CPU", count: sysctlInt("hw.ncpu") ?? 1)]
         }
         return levels
+    }
+
+    /// Cores in the efficiency tier: the level the kernel names "Efficiency",
+    /// or the slowest (last) level if none carries that name.
+    /// On a 2S + 4P + 6E chip this returns 6, so Super and Performance count as performance cores.
+    private static func efficiencyCoreCount(in levels: [CoreLevel]) -> Int {
+        guard levels.count > 1 else { return 0 }
+        let named = levels.filter { $0.name.caseInsensitiveCompare("Efficiency") == .orderedSame }
+        if !named.isEmpty {
+            return named.reduce(0) { $0 + $1.count }
+        }
+        return levels.last?.count ?? 0
     }
 
     private static func sysctlInt(_ name: String) -> Int? {
