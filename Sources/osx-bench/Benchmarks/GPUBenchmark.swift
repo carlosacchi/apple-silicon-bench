@@ -21,16 +21,11 @@ struct GPUBenchmark: Benchmark {
     func run() async throws -> [TestResult] {
         guard let device = MTLCreateSystemDefaultDevice() else {
             // Metal not available - return zeros for all tests
-            return [
-                TestResult(name: "Compute", value: 0, unit: "GFLOPS"),
-                TestResult(name: "Particles", value: 0, unit: "Mparts/s"),
-                TestResult(name: "Blur", value: 0, unit: "MP/s"),
-                TestResult(name: "Edge", value: 0, unit: "MP/s")
-            ]
+            return createFailedResults(reason: "Metal is not available")
         }
 
         guard let commandQueue = device.makeCommandQueue() else {
-            return createFailedResults()
+            return createFailedResults(reason: "Could not create a Metal command queue")
         }
 
         // Compile shaders
@@ -38,7 +33,7 @@ struct GPUBenchmark: Benchmark {
         do {
             library = try await device.makeLibrary(source: metalShaderSource, options: nil)
         } catch {
-            return createFailedResults()
+            return createFailedResults(reason: "Shader compilation failed: \(error.localizedDescription)")
         }
 
         var results: [TestResult] = []
@@ -80,16 +75,103 @@ struct GPUBenchmark: Benchmark {
         )
         results.append(TestResult(name: "Edge", value: edgeResult, unit: "MP/s"))
 
+        // Informational: GPU-side memory bandwidth (not scored yet)
+        results.append(runBandwidthTest(
+            device: device,
+            commandQueue: commandQueue,
+            library: library,
+            duration: quickMode ? 0.5 : 1.5
+        ))
+
         return results
     }
 
-    private func createFailedResults() -> [TestResult] {
+    private func createFailedResults(reason: String) -> [TestResult] {
         [
-            TestResult(name: "Compute", value: 0, unit: "GFLOPS"),
-            TestResult(name: "Particles", value: 0, unit: "Mparts/s"),
-            TestResult(name: "Blur", value: 0, unit: "MP/s"),
-            TestResult(name: "Edge", value: 0, unit: "MP/s")
+            .skipped(name: "Compute", unit: "GFLOPS", reason: reason),
+            .skipped(name: "Particles", unit: "Mparts/s", reason: reason),
+            .skipped(name: "Blur", unit: "MP/s", reason: reason),
+            .skipped(name: "Edge", unit: "MP/s", reason: reason),
+            .skipped(name: Self.bandwidthTestName, unit: "GB/s", reason: reason, informational: true)
         ]
+    }
+
+    // MARK: - Memory Bandwidth Test
+
+    static let bandwidthTestName = "Memory Bandwidth"
+    /// Dispatches per command buffer, to keep launch overhead out of the GPU time
+    private static let bandwidthDispatchesPerCommandBuffer = 8
+
+    /// Streams a large buffer through the GPU (read + write) and reports bytes moved per second
+    /// of GPU time. Buffers are larger than the system level cache, so this measures DRAM bandwidth
+    /// as seen by the GPU, which bounds LLM token generation speed.
+    private func runBandwidthTest(device: MTLDevice, commandQueue: MTLCommandQueue, library: MTLLibrary, duration: Double) -> TestResult {
+        func skipped(_ reason: String) -> TestResult {
+            .skipped(name: Self.bandwidthTestName, unit: "GB/s", reason: reason, informational: true)
+        }
+        guard let function = library.makeFunction(name: "streamCopy"),
+              let pipeline = try? device.makeComputePipelineState(function: function) else {
+            return skipped("Bandwidth kernel unavailable")
+        }
+
+        // 256 MB per buffer (128 MB in quick mode): well above the SLC of every current chip
+        let bufferSize = (quickMode ? 128 : 256) * 1024 * 1024
+        let vectorCount = bufferSize / MemoryLayout<SIMD4<Float>>.stride
+        guard let source = device.makeBuffer(length: bufferSize, options: .storageModePrivate),
+              let destination = device.makeBuffer(length: bufferSize, options: .storageModePrivate) else {
+            return skipped("Could not allocate GPU buffers")
+        }
+
+        func encodeAndRun(dispatches: Int) -> Double? {
+            autoreleasepool {
+                guard let commandBuffer = commandQueue.makeCommandBuffer(),
+                      let encoder = commandBuffer.makeComputeCommandEncoder() else { return nil }
+                encoder.setComputePipelineState(pipeline)
+                encoder.setBuffer(source, offset: 0, index: 0)
+                encoder.setBuffer(destination, offset: 0, index: 1)
+                var count = UInt32(vectorCount)
+                encoder.setBytes(&count, length: MemoryLayout<UInt32>.size, index: 2)
+                let width = pipeline.maxTotalThreadsPerThreadgroup
+                for _ in 0..<dispatches {
+                    encoder.dispatchThreads(
+                        MTLSize(width: vectorCount, height: 1, depth: 1),
+                        threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1)
+                    )
+                }
+                encoder.endEncoding()
+                commandBuffer.commit()
+                commandBuffer.waitUntilCompleted()
+                guard commandBuffer.status == .completed, commandBuffer.error == nil else { return nil }
+                let gpuTime = commandBuffer.gpuEndTime - commandBuffer.gpuStartTime
+                return gpuTime > 0 ? gpuTime : nil
+            }
+        }
+
+        // Warmup (also touches every page of both buffers)
+        guard encodeAndRun(dispatches: 1) != nil else {
+            return skipped("GPU command buffer failed")
+        }
+
+        var samples: [Double] = []
+        var totalGPUTime = 0.0
+        var totalDispatches = 0
+        let endTime = CFAbsoluteTimeGetCurrent() + duration
+        repeat {
+            guard let gpuTime = encodeAndRun(dispatches: Self.bandwidthDispatchesPerCommandBuffer) else {
+                return skipped("GPU command buffer failed during measurement")
+            }
+            totalGPUTime += gpuTime
+            totalDispatches += Self.bandwidthDispatchesPerCommandBuffer
+            samples.append(gpuTime / Double(Self.bandwidthDispatchesPerCommandBuffer))
+        } while CFAbsoluteTimeGetCurrent() < endTime || samples.count < 3
+
+        // Each dispatch reads and writes the whole buffer
+        let bytesMoved = 2.0 * Double(bufferSize) * Double(totalDispatches)
+        let gbps = bytesMoved / totalGPUTime / 1e9
+
+        var details = TestDetails(latencies: samples)
+        details.note = "GPU copy kernel, \(bufferSize / (1024 * 1024)) MB read + write per pass; experimental, not scored"
+        return TestResult(name: Self.bandwidthTestName, value: gbps, unit: "GB/s", informational: true, details: details)
     }
 
     // MARK: - Matrix Multiplication Test
@@ -409,6 +491,17 @@ struct GPUBenchmark: Benchmark {
 private let metalShaderSource = """
 #include <metal_stdlib>
 using namespace metal;
+
+// Memory bandwidth kernel: one float4 read and one float4 write per thread
+kernel void streamCopy(
+    device const float4* source [[buffer(0)]],
+    device float4* destination [[buffer(1)]],
+    constant uint& count [[buffer(2)]],
+    uint gid [[thread_position_in_grid]]
+) {
+    if (gid >= count) return;
+    destination[gid] = source[gid];
+}
 
 // Matrix multiplication kernel
 // Each thread computes one element of the result matrix

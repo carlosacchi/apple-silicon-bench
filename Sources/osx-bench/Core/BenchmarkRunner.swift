@@ -95,8 +95,36 @@ actor BenchmarkRunner {
 
         print("  ✓ Completed in \(String(format: "%.2f", result.duration))s\(thermalChange)")
         for test in result.tests {
+            let tag = test.informational ? " (info, not scored)" : ""
+            if let reason = test.skipReason {
+                print("    • \(test.name): skipped - \(reason)\(tag)")
+                continue
+            }
             let indicator = test.higherIsBetter ? "↑" : "↓"
-            print("    • \(test.name): \(test.formattedValue) \(test.unit) \(indicator)")
+            print("    • \(test.name): \(test.formattedValue) \(test.unit) \(indicator)\(tag)")
+            if let details = test.details {
+                printDetails(details)
+            }
+        }
+    }
+
+    private func printDetails(_ details: TestDetails) {
+        var parts: [String] = []
+        if let p50 = details.latencyP50Ms, let p95 = details.latencyP95Ms {
+            parts.append(String(format: "p50 %.2f ms, p95 %.2f ms", p50, p95))
+        }
+        if let load = details.loadTimeMs {
+            parts.append(String(format: "load %.0f ms", load))
+        }
+        if !parts.isEmpty {
+            print("        \(parts.joined(separator: " · "))")
+        }
+        if let plan = details.computePlanSummary {
+            print("        planned devices: \(plan)")
+        }
+        if let validation = details.validation {
+            let mark = details.validationPassed == false ? "⚠️ " : ""
+            print("        check: \(mark)\(validation)")
         }
     }
 

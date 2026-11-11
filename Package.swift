@@ -25,5 +25,10 @@ let package = Package(
                 .unsafeFlags(["-parse-as-library"])
             ]
         ),
+        .testTarget(
+            name: "osx-benchTests",
+            dependencies: ["osx-bench"],
+            path: "Tests/osx-benchTests"
+        ),
     ]
 )
