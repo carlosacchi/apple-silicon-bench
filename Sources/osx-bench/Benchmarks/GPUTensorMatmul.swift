@@ -33,14 +33,15 @@ struct GPUTensorMatmul {
     }
 
     func run() -> TestResult {
-        #if compiler(>=6.2)
+        #if compiler(>=6.2) && arch(arm64)
         guard #available(macOS 26.0, *) else {
             return skipped("Requires macOS 26 or later (Metal 4)")
         }
         return runMetal4()
         #else
-        // Metal 4 APIs need the macOS 26 SDK (Xcode 26, Swift 6.2) at build time
-        return skipped("This binary was built without the macOS 26 SDK (Metal 4)")
+        // Metal 4 APIs need the macOS 26 SDK (Xcode 26, Swift 6.2) at build time,
+        // and Float16 is only available when targeting arm64
+        return skipped("This binary was built without the macOS 26 SDK (Metal 4) or not for arm64")
         #endif
     }
 
@@ -48,7 +49,7 @@ struct GPUTensorMatmul {
         .skipped(name: Self.testName, unit: Self.unit, reason: reason, informational: true)
     }
 
-    #if compiler(>=6.2)
+    #if compiler(>=6.2) && arch(arm64)
     @available(macOS 26.0, *)
     private func runMetal4() -> TestResult {
         guard let device = MTLCreateSystemDefaultDevice() else {

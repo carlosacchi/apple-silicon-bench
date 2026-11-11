@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **AI baselines calibrated on M1** (scoring change): until v2.4.0 they were placeholders and an M1 scored ~2900. New values, median of 5 full-mode runs on M1 (MacBook Air, 8 GB): CPU 104.74 IPS, GPU 174.70 IPS, Neural Engine 1118.65 IPS, Accelerate Matmul 824.22 GFLOPS. **AI scores are not comparable with earlier versions.** The Total Score is not affected.
-- **Release binaries are built on the `macos-26` runner** (Xcode 26, macOS 26 SDK), required for the Metal 4 test. Builds made with an older SDK still work and skip Tensor Matmul with a reason.
+- **Release binaries are built on the `macos-26` runner** (Xcode 26, macOS 26 SDK), required for the Metal 4 test. Builds made with an older SDK, or for x86_64, still compile and skip Tensor Matmul with a reason.
 - **Neural Engine test uses `.cpuAndNeuralEngine`** instead of `.all`, so Core ML can no longer run layers on the GPU.
 - **"BNNS" renamed "Accelerate Matmul"**: the test always used `vDSP_mmul`, not BNNS. It now uses 2048×2048 matrices in both quick and full mode (was 512 / 1024), page-aligned buffers, and reports total work over total time instead of the mean of per-iteration rates.
 - Tests marked informational are listed with an "info, not scored" badge and never make a category INCOMPLETE. JSON exports add `informational`, `skipReason` and `details` to each test; files from earlier versions can still be decoded.
