@@ -149,8 +149,6 @@ struct GPUTensorMatmul {
         return TestResult(name: Self.testName, value: gflops, unit: Self.unit, informational: true, details: details)
     }
 
-    #endif
-
     /// Compares sampled elements of C with a CPU dot product using the same FP16 inputs
     private func validate(a: UnsafePointer<Float16>, b: UnsafePointer<Float16>, c: UnsafePointer<Float>, n: Int) -> (passed: Bool, message: String) {
         let samples = [(0, 0), (1, 7), (n / 2, n / 3), (17, n - 5), (n - 1, n - 1), (n / 3, 1)]
@@ -166,6 +164,7 @@ struct GPUTensorMatmul {
         let passed = maxRelativeError < 1e-3
         return (passed, String(format: "max relative error %.2e vs CPU on %d samples", maxRelativeError, samples.count))
     }
+    #endif
 
     // Tensors are built inline from plain buffers so a classic compute encoder can bind them.
     // Tensor extents are (columns, rows): A is n x n, B is n x n, C = A * B.
