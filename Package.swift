@@ -1,7 +1,7 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-let version = "2.4.0"
+let version = "2.5.0"
 
 let package = Package(
     name: "osx-bench",
@@ -24,6 +24,11 @@ let package = Package(
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])
             ]
+        ),
+        .testTarget(
+            name: "osx-benchTests",
+            dependencies: ["osx-bench"],
+            path: "Tests/osx-benchTests"
         ),
     ]
 )

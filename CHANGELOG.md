@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-11-11
+
+### Added
+
+- **Output check for Core ML**: GPU and Neural Engine outputs are compared with the CPU output (cosine similarity ≥ 0.99, top-1 class shown). A failed check is shown as a warning and does not change the score.
+- **Planned devices for the Neural Engine test** (macOS 14.4+): the report lists how many model operations Core ML plans to run on each device (`MLComputePlan`). On M1 all 100 MobileNetV2 operations are planned on the Neural Engine.
+- **Latency statistics and load time**: p50, p95, standard deviation and sample count per test, plus model load time per compute unit. Shown in the terminal, the HTML report and the JSON `details` field.
+- **Skip reasons**: a test that cannot run reports why (model failed to load, prediction error, macOS too old, Metal unavailable) in the terminal, report and JSON `skipReason` field, instead of a silent 0.
+- **Tensor Matmul (experimental, not scored)**: FP16 matrix multiply through Metal 4 tensor ops (`matmul2d`), the API that uses the GPU Neural Accelerators on M5 and later. Works from M1 (1574 GFLOPS on M1). Requires macOS 26.
+- **GPU Memory Bandwidth (experimental, not scored)**: GPU copy kernel over 256 MB buffers (57.0 GB/s on M1).
+- Unit tests (Swift Testing) for statistics, output validation, scoring of informational tests and JSON decoding.
+- CI runs the unit tests and builds on both `macos-26` and `macos-15` runners.
+
+### Changed
+
+- **AI baselines calibrated on M1** (scoring change): until v2.4.0 they were placeholders and an M1 scored ~2900. New values, median of 5 full-mode runs on M1 (MacBook Air, 8 GB): CPU 104.74 IPS, GPU 174.70 IPS, Neural Engine 1118.65 IPS, Accelerate Matmul 824.22 GFLOPS. **AI scores are not comparable with earlier versions.** The Total Score is not affected.
+- **Release binaries are built on the `macos-26` runner** (Xcode 26, macOS 26 SDK), required for the Metal 4 test. Builds made with an older SDK, or for x86_64, still compile and skip Tensor Matmul with a reason.
+- **Neural Engine test uses `.cpuAndNeuralEngine`** instead of `.all`, so Core ML can no longer run layers on the GPU.
+- **"BNNS" renamed "Accelerate Matmul"**: the test always used `vDSP_mmul`, not BNNS. It now uses 2048×2048 matrices in both quick and full mode (was 512 / 1024), page-aligned buffers, and reports total work over total time instead of the mean of per-iteration rates.
+- Tests marked informational are listed with an "info, not scored" badge and never make a category INCOMPLETE. JSON exports add `informational`, `skipReason` and `details` to each test; files from earlier versions can still be decoded.
+
+### Fixed
+
+- **Failed Core ML predictions were counted as completed** (`try?` in the measurement loop), which could inflate IPS. Only successful predictions are counted now; an error marks the test as skipped with the error message.
+- Core ML model load or input errors returned 0 without explanation.
+
 ## [2.4.0] - 2026-10-29
 
 ### Changed
@@ -531,6 +557,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[2.5.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.5.0
 [2.4.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.4.0
 [2.3.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.3.0
 [2.2.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.2.0

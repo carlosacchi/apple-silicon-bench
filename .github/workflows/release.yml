@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   build-and-release:
-    runs-on: macos-15
+    # macOS 26 SDK is required to compile the Metal 4 tensor matmul test
+    runs-on: macos-26
 
     steps:
     - uses: actions/checkout@v4

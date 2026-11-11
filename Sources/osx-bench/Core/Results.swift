@@ -24,17 +24,106 @@ enum BenchmarkType: String, CaseIterable, Codable {
 
 // MARK: - Individual Test Results
 
+/// Optional per-test measurement details (not used for scoring)
+struct TestDetails: Codable, Equatable {
+    var samples: Int?
+    var latencyMeanMs: Double?
+    var latencyP50Ms: Double?
+    var latencyP95Ms: Double?
+    var latencyStdDevMs: Double?
+    /// Time to load the model for this compute configuration
+    var loadTimeMs: Double?
+    /// Planned device per model operation (Core ML MLComputePlan), e.g. ["Neural Engine": 60, "CPU": 6]
+    var computePlan: [String: Int]?
+    /// Output check against a reference (e.g. Core ML CPU output or a CPU matmul)
+    var validationPassed: Bool?
+    var validation: String?
+    var note: String?
+
+    init(samples: Int? = nil, latencyMeanMs: Double? = nil, latencyP50Ms: Double? = nil,
+         latencyP95Ms: Double? = nil, latencyStdDevMs: Double? = nil, loadTimeMs: Double? = nil,
+         computePlan: [String: Int]? = nil, validationPassed: Bool? = nil, validation: String? = nil,
+         note: String? = nil) {
+        self.samples = samples
+        self.latencyMeanMs = latencyMeanMs
+        self.latencyP50Ms = latencyP50Ms
+        self.latencyP95Ms = latencyP95Ms
+        self.latencyStdDevMs = latencyStdDevMs
+        self.loadTimeMs = loadTimeMs
+        self.computePlan = computePlan
+        self.validationPassed = validationPassed
+        self.validation = validation
+        self.note = note
+    }
+
+    /// Fills the latency fields from per-iteration samples (in seconds)
+    init(latencies: [Double]) {
+        let stats = LatencyStats(samples: latencies)
+        self.init(
+            samples: latencies.count,
+            latencyMeanMs: stats.map { $0.mean * 1000 },
+            latencyP50Ms: stats.map { $0.p50 * 1000 },
+            latencyP95Ms: stats.map { $0.p95 * 1000 },
+            latencyStdDevMs: stats.map { $0.stdDev * 1000 }
+        )
+    }
+
+    /// Ordered device usage summary, e.g. "Neural Engine 60/66, CPU 6/66"
+    var computePlanSummary: String? {
+        guard let plan = computePlan, !plan.isEmpty else { return nil }
+        let total = plan.values.reduce(0, +)
+        return plan.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .map { "\($0.key) \($0.value)/\(total)" }
+            .joined(separator: ", ")
+    }
+}
+
 struct TestResult: Codable {
     let name: String
     let value: Double
     let unit: String
     let higherIsBetter: Bool
+    /// Informational tests are reported but never scored (experimental or awaiting calibration)
+    let informational: Bool
+    /// Set when the test could not run; value is 0 in that case
+    let skipReason: String?
+    let details: TestDetails?
 
-    init(name: String, value: Double, unit: String, higherIsBetter: Bool = true) {
+    init(name: String, value: Double, unit: String, higherIsBetter: Bool = true,
+         informational: Bool = false, skipReason: String? = nil, details: TestDetails? = nil) {
         self.name = name
         self.value = value
         self.unit = unit
         self.higherIsBetter = higherIsBetter
+        self.informational = informational
+        self.skipReason = skipReason
+        self.details = details
+    }
+
+    /// A test that did not run, with the reason it was skipped
+    static func skipped(name: String, unit: String, reason: String, informational: Bool = false) -> TestResult {
+        TestResult(name: name, value: 0, unit: unit, informational: informational, skipReason: reason)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, value, unit, higherIsBetter, informational, skipReason, details
+    }
+
+    // Custom decoding keeps JSON exported by versions before 2.5.0 readable
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        value = try container.decode(Double.self, forKey: .value)
+        unit = try container.decode(String.self, forKey: .unit)
+        higherIsBetter = try container.decodeIfPresent(Bool.self, forKey: .higherIsBetter) ?? true
+        informational = try container.decodeIfPresent(Bool.self, forKey: .informational) ?? false
+        skipReason = try container.decodeIfPresent(String.self, forKey: .skipReason)
+        details = try container.decodeIfPresent(TestDetails.self, forKey: .details)
+    }
+
+    /// Scored test with no valid value (failed, skipped or non-finite)
+    var isInvalid: Bool {
+        !informational && (!value.isFinite || value <= 0)
     }
 
     var formattedValue: String {
@@ -72,6 +161,16 @@ struct BenchmarkResult: Codable {
     var hadThrottling: Bool {
         thermalStart == .serious || thermalStart == .critical ||
         thermalEnd == .serious || thermalEnd == .critical
+    }
+
+    /// Tests that count toward the category score
+    var scoredTests: [TestResult] {
+        tests.filter { !$0.informational }
+    }
+
+    /// True when a scored test failed or was skipped, so the category score is not reliable
+    var isIncomplete: Bool {
+        tests.contains { $0.isInvalid }
     }
 
     var summary: String {
@@ -238,13 +337,14 @@ struct BenchmarkScorer {
         "gpu_blur": 1870,             // 1870 MP/s on M1
         "gpu_edge": 5410,             // 5410 MP/s on M1
 
-        // AI/ML benchmarks - M1 baseline (IPS and GFLOPS)
-        // These are placeholder values - will be calibrated from real M1 runs
-        // after the CoreML model is set up
-        "ai_cpu": 45.0,               // ~45 IPS CoreML CPU-only on M1
-        "ai_gpu": 180.0,              // ~180 IPS CoreML GPU on M1
-        "ai_neural engine": 350.0,    // ~350 IPS CoreML Neural Engine on M1
-        "ai_bnns": 25.0,              // ~25 GFLOPS BNNS matmul on M1
+        // AI/ML (IPS and GFLOPS) - median from 5 M1 runs (MacBook Air, 8 GB), full mode, v2.5.0
+        // MobileNetV2 inference per compute unit + Accelerate FP32 matmul (2048x2048)
+        "ai_cpu": 104.74,             // 104.74 IPS, Core ML .cpuOnly
+        "ai_gpu": 174.70,             // 174.70 IPS, Core ML .cpuAndGPU
+        "ai_neural engine": 1118.65,  // 1118.65 IPS, Core ML .cpuAndNeuralEngine
+        "ai_accelerate matmul": 824.22, // 824.22 GFLOPS, vDSP_mmul (AMX on Apple Silicon)
+        // Not scored (informational), M1 reference for comparison:
+        // Tensor Matmul 1574 GFLOPS (FP16, Metal 4), GPU Memory Bandwidth 57.0 GB/s
     ]
 
     func calculateScores(from results: BenchmarkResults, coreCount: Int = 8) -> BenchmarkScores {
@@ -358,13 +458,14 @@ struct BenchmarkScorer {
     private func calculateAIScore(_ results: BenchmarkResults) -> Double {
         guard let result = results.result(for: .ai) else { return 0 }
         guard !hasInvalidTests(result) else { return Double.nan }
-        // AI tests: CPU, GPU, Neural Engine (IPS), BNNS (GFLOPS)
+        // AI tests: CPU, GPU, Neural Engine (IPS), Accelerate Matmul (GFLOPS)
+        // Informational tests (e.g. Tensor Matmul) are excluded
         // Use geometric mean with "ai_" prefix
         return calculateGeometricMeanScore(tests: result.tests, keyPrefix: "ai_")
     }
 
     private func hasInvalidTests(_ result: BenchmarkResult) -> Bool {
-        result.tests.contains { !$0.value.isFinite || $0.value <= 0 }
+        result.isIncomplete
     }
 
     // MARK: - Geometric Mean Helper
@@ -387,7 +488,7 @@ struct BenchmarkScorer {
         var logSum = 0.0
         var count = 0
 
-        for test in tests {
+        for test in tests where !test.informational {
             guard test.value > 0 else { continue }
 
             let baseName = test.name.lowercased()

@@ -280,6 +280,27 @@ struct HTMLReportGenerator {
                     font-size: 0.85rem;
                 }
 
+                .test-badge {
+                    display: inline-block;
+                    margin-left: 0.4rem;
+                    padding: 0 0.4rem;
+                    border-radius: 6px;
+                    font-size: 0.7rem;
+                    background: rgba(255,255,255,0.1);
+                    color: var(--text-secondary);
+                }
+
+                .test-meta {
+                    margin-top: 0.4rem;
+                    color: var(--text-secondary);
+                    font-size: 0.75rem;
+                    line-height: 1.4;
+                }
+
+                .test-warning {
+                    color: #feca57;
+                }
+
                 .chart-container {
                     height: 300px;
                     margin-top: 2rem;
@@ -481,14 +502,9 @@ struct HTMLReportGenerator {
     private func generateAIScoreSection() -> String {
         // Get AI benchmark result for sub-scores
         guard let aiResult = results.result(for: .ai) else { return "" }
-        let subScores = aiResult.tests.map { test -> String in
-            """
-            <div class="test-item">
-                <div class="test-name">\(escapeHTML(test.name))</div>
-                <div class="test-value">\(escapeHTML(test.formattedValue)) <span class="test-unit">\(escapeHTML(test.unit))</span></div>
-            </div>
-            """
-        }.joined(separator: "\n")
+        let subScores = aiResult.scoredTests
+            .map { testItemHTML($0, showDetails: false) }
+            .joined(separator: "\n")
 
         return """
         <section class="benchmark-section" style="background: linear-gradient(135deg, #2a2a4a 0%, #1a1a3a 100%); border: 2px solid #00CED1;">
@@ -594,14 +610,7 @@ struct HTMLReportGenerator {
                     </div>
                 </div>
                 <div class="test-grid">
-                    \(result.tests.map { test in
-                        """
-                        <div class="test-item">
-                            <div class="test-name">\(escapeHTML(test.name))</div>
-                            <div class="test-value">\(escapeHTML(test.formattedValue)) <span class="test-unit">\(escapeHTML(test.unit))</span></div>
-                        </div>
-                        """
-                    }.joined(separator: "\n"))
+                    \(result.tests.map { testItemHTML($0, showDetails: true) }.joined(separator: "\n"))
                 </div>
             </section>
             """
@@ -680,7 +689,58 @@ struct HTMLReportGenerator {
     }
 
     private func isIncompleteResult(_ result: BenchmarkResult) -> Bool {
-        result.tests.contains { !$0.value.isFinite || $0.value <= 0 }
+        result.isIncomplete
+    }
+
+    // MARK: - Test Item
+
+    private func testItemHTML(_ test: TestResult, showDetails: Bool) -> String {
+        let badge = test.informational ? "<span class=\"test-badge\">info, not scored</span>" : ""
+        let value: String
+        if test.skipReason != nil {
+            value = "<div class=\"test-value test-warning\">Skipped</div>"
+        } else {
+            value = "<div class=\"test-value\">\(escapeHTML(test.formattedValue)) <span class=\"test-unit\">\(escapeHTML(test.unit))</span></div>"
+        }
+
+        var meta: [String] = []
+        if let reason = test.skipReason {
+            meta.append("<span class=\"test-warning\">\(escapeHTML(reason))</span>")
+        }
+        if showDetails, let details = test.details {
+            if let p50 = details.latencyP50Ms, let p95 = details.latencyP95Ms {
+                var line = String(format: "p50 %.2f ms · p95 %.2f ms", p50, p95)
+                if let stdDev = details.latencyStdDevMs {
+                    line += String(format: " · σ %.2f ms", stdDev)
+                }
+                if let samples = details.samples {
+                    line += " · n=\(samples)"
+                }
+                meta.append(escapeHTML(line))
+            }
+            if let load = details.loadTimeMs {
+                meta.append(escapeHTML(String(format: "Model load %.0f ms", load)))
+            }
+            if let plan = details.computePlanSummary {
+                meta.append(escapeHTML("Planned devices: \(plan)"))
+            }
+            if let validation = details.validation {
+                let text = escapeHTML("Check: \(validation)")
+                meta.append(details.validationPassed == false ? "<span class=\"test-warning\">⚠ \(text)</span>" : text)
+            }
+            if let note = details.note {
+                meta.append(escapeHTML(note))
+            }
+        }
+        let metaHTML = meta.isEmpty ? "" : "<div class=\"test-meta\">\(meta.joined(separator: "<br>"))</div>"
+
+        return """
+        <div class="test-item">
+            <div class="test-name">\(escapeHTML(test.name))\(badge)</div>
+            \(value)
+            \(metaHTML)
+        </div>
+        """
     }
 
     // MARK: - Advanced Profile Section

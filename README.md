@@ -15,7 +15,7 @@ A lightweight, native Swift benchmark tool designed specifically for Apple Silic
 - **GPU Benchmark (Metal)**: Compute shaders, particle simulation, image processing
 - **Memory Benchmark**: Bandwidth and latency measurements
 - **Disk Benchmark**: Sequential and random I/O with cache bypass
-- **AI/ML Benchmark (NEW in v2.0)**: CoreML inference (CPU/GPU/Neural Engine), BNNS operations
+- **AI/ML Benchmark**: Core ML inference on CPU, GPU and Neural Engine (with output check and planned-device report), Accelerate matrix multiply, experimental Metal 4 tensor matmul
 - **Thermal Monitoring**: Real-time throttling detection
 - **HTML Reports**: Beautiful interactive reports saved to Desktop
 - **Lightweight**: ~2MB standalone binary, no dependencies
@@ -106,10 +106,20 @@ osx-bench run --export results.json
 
 ### AI Score (Separate)
 The AI/ML score is reported **separately** from the Total Score (similar to Geekbench AI):
-- **AI-CPU**: CoreML inference with CPU-only compute
-- **AI-GPU**: CoreML inference with GPU acceleration
-- **AI-Neural Engine**: CoreML inference with Neural Engine (when available)
-- **AI-BNNS**: Accelerate framework matrix operations
+- **AI-CPU**: Core ML inference, CPU only (`.cpuOnly`)
+- **AI-GPU**: Core ML inference on the GPU (`.cpuAndGPU`)
+- **AI-Neural Engine**: Core ML inference on the Neural Engine with CPU fallback only (`.cpuAndNeuralEngine`). The report shows how many model operations Core ML plans to run on each device
+- **AI-Accelerate Matmul**: FP32 matrix multiply with Accelerate, which runs on the CPU matrix unit (AMX/SME)
+
+GPU and Neural Engine outputs are checked against the CPU output, and each test reports p50/p95 latency and model load time.
+
+**Experimental tests (shown in the report, not scored):**
+- **Tensor Matmul** (AI): FP16 matrix multiply through Metal 4 tensor ops, the API that uses the GPU Neural Accelerators on M5 and later. Requires macOS 26
+- **Memory Bandwidth** (GPU): GPU-side DRAM bandwidth, which limits LLM token generation
+
+Results from M5/M6 Macs for these tests are welcome: run `osx-bench run --only gpu,ai --export results.json` and open an issue with the JSON.
+
+> **Note on v2.5.0:** AI baselines were placeholders until v2.4.0 (an M1 scored ~2900). They are now calibrated on M1, the Neural Engine test no longer lets Core ML use the GPU, and "BNNS" was renamed "Accelerate Matmul" (it always used `vDSP_mmul`). AI scores are not comparable with earlier versions. The Total Score is unchanged.
 
 *Note: Actual results may vary based on chassis, cooling, and configuration*
 
