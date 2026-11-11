@@ -13,7 +13,13 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    # macos-26: Xcode 26 / macOS 26 SDK (Metal 4 tensor test compiled in)
+    # macos-15: older SDK, checks that the build still works without Metal 4
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, macos-15]
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - uses: actions/checkout@v4
@@ -24,9 +30,8 @@ jobs:
       - name: Build
         run: swift build -c release
 
-      # Note: No tests yet - uncomment when test suite is added
-      # - name: Run Tests
-      #   run: swift test
+      - name: Run Tests
+        run: swift test
 
       - name: Verify Binary
         run: |

@@ -33,16 +33,22 @@ struct GPUTensorMatmul {
     }
 
     func run() -> TestResult {
+        #if compiler(>=6.2)
         guard #available(macOS 26.0, *) else {
             return skipped("Requires macOS 26 or later (Metal 4)")
         }
         return runMetal4()
+        #else
+        // Metal 4 APIs need the macOS 26 SDK (Xcode 26, Swift 6.2) at build time
+        return skipped("This binary was built without the macOS 26 SDK (Metal 4)")
+        #endif
     }
 
     private func skipped(_ reason: String) -> TestResult {
         .skipped(name: Self.testName, unit: Self.unit, reason: reason, informational: true)
     }
 
+    #if compiler(>=6.2)
     @available(macOS 26.0, *)
     private func runMetal4() -> TestResult {
         guard let device = MTLCreateSystemDefaultDevice() else {
@@ -142,6 +148,8 @@ struct GPUTensorMatmul {
         details.note = "FP16 inputs, FP32 output, \(n)x\(n), Metal 4 matmul2d; experimental, not scored"
         return TestResult(name: Self.testName, value: gflops, unit: Self.unit, informational: true, details: details)
     }
+
+    #endif
 
     /// Compares sampled elements of C with a CPU dot product using the same FP16 inputs
     private func validate(a: UnsafePointer<Float16>, b: UnsafePointer<Float16>, c: UnsafePointer<Float>, n: Int) -> (passed: Bool, message: String) {
