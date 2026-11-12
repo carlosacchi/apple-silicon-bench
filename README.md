@@ -111,7 +111,7 @@ The AI/ML score is reported **separately** from the Total Score (similar to Geek
 - **AI-Neural Engine**: Core ML inference on the Neural Engine with CPU fallback only (`.cpuAndNeuralEngine`). The report shows how many model operations Core ML plans to run on each device
 - **AI-Accelerate Matmul**: FP32 matrix multiply with Accelerate, which runs on the CPU matrix unit (AMX/SME)
 
-GPU and Neural Engine outputs are checked against the CPU output, and each test reports p50/p95 latency and model load time.
+GPU and Neural Engine outputs are checked against the CPU output, and each test reports p50/p95 latency and model load time. These details are also in the JSON export (`informational`, `skipReason` and `details` fields per test, see [Usage](https://github.com/carlosacchi/apple-silicon-bench/wiki/Usage#export-json)).
 
 **Experimental tests (shown in the report, not scored):**
 - **Tensor Matmul** (AI): FP16 matrix multiply through Metal 4 tensor ops, the API that uses the GPU Neural Accelerators on M5 and later. Requires macOS 26
@@ -136,6 +136,7 @@ For detailed methodology, see the [Wiki](https://github.com/carlosacchi/apple-si
 
 - macOS 13.0 (Ventura) or later
 - Apple Silicon Mac
+- Optional, per test (skipped with a reason otherwise): macOS 14.4+ for the Neural Engine planned-device report, macOS 26+ for the experimental Tensor Matmul
 
 ### Supported Chips
 
@@ -154,6 +155,7 @@ A18 Pro (MacBook Neo)
 
 See the **[Wiki](https://github.com/carlosacchi/apple-silicon-bench/wiki)** for:
 - [Scoring Methodology](https://github.com/carlosacchi/apple-silicon-bench/wiki/Scoring-Methodology) - How scores are calculated
+- [Design Decisions](https://github.com/carlosacchi/apple-silicon-bench/wiki/Design-Decisions) - Why the tests work the way they do (Neural Engine isolation, output checks, unscored tests, calibration)
 - [Benchmark Details](https://github.com/carlosacchi/apple-silicon-bench/wiki/Benchmark-Details) - Technical details of each test
 - [Advanced Profiling](https://github.com/carlosacchi/apple-silicon-bench/wiki/Advanced-Profiling) - PassMark-inspired deep analysis
 - [FAQ](https://github.com/carlosacchi/apple-silicon-bench/wiki/FAQ) - Common questions and troubleshooting
@@ -170,9 +172,20 @@ See the **[Wiki](https://github.com/carlosacchi/apple-silicon-bench/wiki)** for:
 | Binary Size | ~2MB | ~200MB | ~1GB |
 | Price | Free | $15 (Pro) | Free |
 
+## Development
+
+```bash
+swift build -c release
+swift test   # Swift Testing; with Command Line Tools only, see the wiki
+```
+
+Release binaries are built with Xcode 26 (macOS 26 SDK), needed for the Metal 4 test. Older toolchains still build and skip that test. See [Getting Started](https://github.com/carlosacchi/apple-silicon-bench/wiki/Getting-Started#build-from-source).
+
 ## Contributing
 
 Contributions welcome! See the [Wiki](https://github.com/carlosacchi/apple-silicon-bench/wiki) for guidelines.
+
+Results from M5/M6 Macs for the experimental tests are especially useful: `osx-bench run --only gpu,ai --export results.json`, then attach the JSON to an issue.
 
 ## License
 
