@@ -10,26 +10,53 @@ import Metal
 /// runs on the regular GPU shader cores, so the same test works from M1 onwards and the
 /// M1 result can serve as a baseline.
 ///
-/// Reported as informational: not part of the AI score until results from chips with
-/// Neural Accelerators confirm the test behaves as expected.
+/// Two variants, both informational (not part of the AI score until results from chips
+/// with Neural Accelerators confirm the test behaves as expected):
+/// - `Tensor Matmul`: 2048x2048 with one 64x32 tile, unchanged since v2.5.0 so results stay comparable;
+/// - `Tensor Matmul 4096`: 4096x4096, tries several tile sizes and reports the fastest, to see
+///   whether the 2048 test leaves Neural Accelerator throughput unused.
 struct GPUTensorMatmul {
     static let testName = "Tensor Matmul"
+    static let largeTestName = "Tensor Matmul 4096"
     static let unit = "GFLOPS"
 
-    /// Square matrix size; must be a multiple of the tile sizes below (64 and 32)
+    /// Tile of C computed by one threadgroup (rows x columns) and the simdgroups that share it.
+    /// Rows and columns must divide the matrix size.
+    struct Tile: Equatable {
+        let rows: Int
+        let columns: Int
+        let simdgroups: Int
+
+        var label: String { "\(rows)x\(columns)" }
+    }
+
+    static let defaultTile = Tile(rows: 64, columns: 32, simdgroups: 4)
+    /// Larger tiles load each input element once for more multiply-adds
+    static let sweepTiles = [
+        defaultTile,
+        Tile(rows: 64, columns: 64, simdgroups: 4),
+        Tile(rows: 128, columns: 64, simdgroups: 4)
+    ]
+
+    let name: String
     let matrixSize: Int
+    let tiles: [Tile]
+    /// Measurement time per tile
     let duration: Double
-
-    // Tile computed by one threadgroup (rows of C x columns of C)
-    private static let tileRows = 64
-    private static let tileColumns = 32
-    private static let simdgroupsPerThreadgroup = 4
     /// Dispatches per command buffer, to keep launch overhead out of the GPU time
-    private static let dispatchesPerCommandBuffer = 10
+    let dispatchesPerCommandBuffer: Int
 
-    init(matrixSize: Int = 2048, duration: Double) {
-        self.matrixSize = matrixSize
-        self.duration = duration
+    /// The v2.5.0 test: 2048x2048, 64x32 tile, 10 dispatches per command buffer
+    static func standard(duration: Double) -> GPUTensorMatmul {
+        GPUTensorMatmul(name: testName, matrixSize: 2048, tiles: [defaultTile],
+                        duration: duration, dispatchesPerCommandBuffer: 10)
+    }
+
+    /// 4096x4096 over `sweepTiles`. One 4096 matmul is 8x the work of a 2048 one
+    /// (~90 ms on M1), so fewer dispatches per command buffer are needed
+    static func large(durationPerTile: Double) -> GPUTensorMatmul {
+        GPUTensorMatmul(name: largeTestName, matrixSize: 4096, tiles: sweepTiles,
+                        duration: durationPerTile, dispatchesPerCommandBuffer: 2)
     }
 
     func run() -> TestResult {
@@ -46,7 +73,21 @@ struct GPUTensorMatmul {
     }
 
     private func skipped(_ reason: String) -> TestResult {
-        .skipped(name: Self.testName, unit: Self.unit, reason: reason, informational: true)
+        .skipped(name: name, unit: Self.unit, reason: reason, informational: true)
+    }
+
+    /// Outcome for one tile size
+    struct TileRun {
+        let tile: Tile
+        let gflops: Double
+        let samples: [Double]
+        let validation: (passed: Bool, message: String)
+    }
+
+    /// The fastest validated tile, or the fastest of all if none passed (so the failed check is shown)
+    static func best(of runs: [TileRun]) -> TileRun? {
+        let passed = runs.filter { $0.validation.passed }
+        return (passed.isEmpty ? runs : passed).max { $0.gflops < $1.gflops }
     }
 
     #if compiler(>=6.2) && arch(arm64)
@@ -62,92 +103,109 @@ struct GPUTensorMatmul {
             return skipped("Could not create a Metal command queue")
         }
 
-        let options = MTLCompileOptions()
-        options.languageVersion = .version4_0
-        let pipeline: MTLComputePipelineState
-        do {
-            let library = try device.makeLibrary(source: Self.shaderSource, options: options)
-            guard let function = library.makeFunction(name: "tensorMatmulFP16") else {
-                return skipped("Tensor matmul kernel not found")
-            }
-            pipeline = try device.makeComputePipelineState(function: function)
-        } catch {
-            return skipped("Metal 4 tensor ops unavailable: \(error.localizedDescription)")
-        }
-
         let n = matrixSize
         let elements = n * n
+        let outputBytes = elements * MemoryLayout<Float>.stride
         guard let bufferA = device.makeBuffer(length: elements * MemoryLayout<Float16>.stride, options: .storageModeShared),
               let bufferB = device.makeBuffer(length: elements * MemoryLayout<Float16>.stride, options: .storageModeShared),
-              let bufferC = device.makeBuffer(length: elements * MemoryLayout<Float>.stride, options: .storageModeShared) else {
+              let bufferC = device.makeBuffer(length: outputBytes, options: .storageModeShared) else {
             return skipped("Could not allocate GPU buffers")
         }
 
-        // Small exact values keep the FP16 inputs deterministic and the check meaningful
+        // Small exact values keep the FP16 inputs deterministic and the check meaningful:
+        // every product is a multiple of 1/32 and every sum stays below 2^19, so FP32
+        // accumulation is exact (the check reports 0 error) while FP16 accumulation would fail it
         let a = bufferA.contents().bindMemory(to: Float16.self, capacity: elements)
         let b = bufferB.contents().bindMemory(to: Float16.self, capacity: elements)
         for i in 0..<elements {
             a[i] = Float16(Float(i % 7) * 0.125)
             b[i] = Float16(Float(i % 5) * 0.25)
         }
+        let c = bufferC.contents().bindMemory(to: Float.self, capacity: elements)
 
-        let threadgroupWidth = pipeline.threadExecutionWidth * Self.simdgroupsPerThreadgroup
+        var runs: [TileRun] = []
+        var failures: [(tile: Tile, reason: String)] = []
+        for tile in tiles {
+            switch runTile(tile, device: device, queue: queue, buffers: (bufferA, bufferB, bufferC)) {
+            case .success(let samples):
+                let validation = validate(a: a, b: b, c: c, n: n)
+                let gflops = 2.0 * Double(n) * Double(n) * Double(n) / GPUTiming.mean(samples) / 1e9
+                runs.append(TileRun(tile: tile, gflops: gflops, samples: samples, validation: validation))
+            case .failure(let reason):
+                failures.append((tile, reason))
+            }
+            // Clear C so a later tile cannot pass the check with an earlier tile's output
+            memset(bufferC.contents(), 0, outputBytes)
+        }
+
+        guard let best = Self.best(of: runs) else {
+            let reason = failures.first.map { "\($0.tile.label): \($0.reason)" } ?? "no tile size ran"
+            return skipped("Metal 4 tensor ops unavailable (\(reason))")
+        }
+
+        var details = TestDetails(latencies: best.samples)
+        details.validationPassed = best.validation.passed
+        details.validation = best.validation.message
+        var note = "FP16 inputs, FP32 output, \(n)x\(n), Metal 4 matmul2d"
+        if tiles.count > 1 {
+            let perTile = runs.map { String(format: "%@ %.0f", $0.tile.label, $0.gflops) }
+                + failures.map { "\($0.tile.label) failed" }
+            note += ", best tile \(best.tile.label) (\(perTile.joined(separator: ", ")) GFLOPS)"
+        }
+        details.note = note + "; experimental, not scored"
+        return TestResult(name: name, value: best.gflops, unit: Self.unit, informational: true, details: details)
+    }
+
+    private enum TileOutcome {
+        case success([Double])
+        case failure(String)
+    }
+
+    @available(macOS 26.0, *)
+    private func runTile(_ tile: Tile, device: MTLDevice, queue: MTLCommandQueue,
+                         buffers: (a: MTLBuffer, b: MTLBuffer, c: MTLBuffer)) -> TileOutcome {
+        let n = matrixSize
+        guard n % tile.rows == 0, n % tile.columns == 0 else {
+            return .failure("tile does not divide \(n)")
+        }
+
+        let options = MTLCompileOptions()
+        options.languageVersion = .version4_0
+        let pipeline: MTLComputePipelineState
+        do {
+            let library = try device.makeLibrary(source: Self.shaderSource(for: tile), options: options)
+            guard let function = library.makeFunction(name: "tensorMatmulFP16") else {
+                return .failure("kernel not found")
+            }
+            pipeline = try device.makeComputePipelineState(function: function)
+        } catch {
+            return .failure(error.localizedDescription)
+        }
+
+        let threadgroupWidth = pipeline.threadExecutionWidth * tile.simdgroups
         guard threadgroupWidth <= pipeline.maxTotalThreadsPerThreadgroup else {
-            return skipped("Threadgroup size not supported by this GPU")
+            return .failure("threadgroup size not supported by this GPU")
         }
 
-        func encodeAndRun(dispatches: Int) -> Double? {
-            autoreleasepool {
-                guard let commandBuffer = queue.makeCommandBuffer(),
-                      let encoder = commandBuffer.makeComputeCommandEncoder() else { return nil }
+        var size = Int32(n)
+        let groups = MTLSize(width: n / tile.columns, height: n / tile.rows, depth: 1)
+        let threads = MTLSize(width: threadgroupWidth, height: 1, depth: 1)
+        guard let samples = GPUTiming.measure(
+            commandQueue: queue,
+            duration: duration,
+            dispatchesPerCommandBuffer: dispatchesPerCommandBuffer,
+            encode: { encoder in
                 encoder.setComputePipelineState(pipeline)
-                encoder.setBuffer(bufferA, offset: 0, index: 0)
-                encoder.setBuffer(bufferB, offset: 0, index: 1)
-                encoder.setBuffer(bufferC, offset: 0, index: 2)
-                var size = Int32(n)
+                encoder.setBuffer(buffers.a, offset: 0, index: 0)
+                encoder.setBuffer(buffers.b, offset: 0, index: 1)
+                encoder.setBuffer(buffers.c, offset: 0, index: 2)
                 encoder.setBytes(&size, length: MemoryLayout<Int32>.size, index: 3)
-                let groups = MTLSize(width: n / Self.tileColumns, height: n / Self.tileRows, depth: 1)
-                let threads = MTLSize(width: threadgroupWidth, height: 1, depth: 1)
-                for _ in 0..<dispatches {
-                    encoder.dispatchThreadgroups(groups, threadsPerThreadgroup: threads)
-                }
-                encoder.endEncoding()
-                commandBuffer.commit()
-                commandBuffer.waitUntilCompleted()
-                guard commandBuffer.status == .completed, commandBuffer.error == nil else { return nil }
-                let gpuTime = commandBuffer.gpuEndTime - commandBuffer.gpuStartTime
-                return gpuTime > 0 ? gpuTime : nil
+                encoder.dispatchThreadgroups(groups, threadsPerThreadgroup: threads)
             }
+        ) else {
+            return .failure("GPU command buffer failed")
         }
-
-        // Warmup (also produces the output used for validation)
-        guard encodeAndRun(dispatches: 1) != nil else {
-            return skipped("GPU command buffer failed")
-        }
-        let validation = validate(a: a, b: b, c: bufferC.contents().bindMemory(to: Float.self, capacity: elements), n: n)
-
-        // Measure: GPU time only, several dispatches per command buffer
-        var gpuTimes: [Double] = []
-        var totalGPUTime = 0.0
-        var totalDispatches = 0
-        let endTime = CFAbsoluteTimeGetCurrent() + duration
-        repeat {
-            guard let gpuTime = encodeAndRun(dispatches: Self.dispatchesPerCommandBuffer) else {
-                return skipped("GPU command buffer failed during measurement")
-            }
-            totalGPUTime += gpuTime
-            totalDispatches += Self.dispatchesPerCommandBuffer
-            gpuTimes.append(gpuTime / Double(Self.dispatchesPerCommandBuffer))
-        } while CFAbsoluteTimeGetCurrent() < endTime || gpuTimes.count < 3
-
-        let flopsPerMatmul = 2.0 * Double(n) * Double(n) * Double(n)
-        let gflops = flopsPerMatmul * Double(totalDispatches) / totalGPUTime / 1e9
-
-        var details = TestDetails(latencies: gpuTimes)
-        details.validationPassed = validation.passed
-        details.validation = validation.message
-        details.note = "FP16 inputs, FP32 output, \(n)x\(n), Metal 4 matmul2d; experimental, not scored"
-        return TestResult(name: Self.testName, value: gflops, unit: Self.unit, informational: true, details: details)
+        return .success(samples)
     }
 
     /// Compares sampled elements of C with a CPU dot product using the same FP16 inputs
@@ -169,32 +227,34 @@ struct GPUTensorMatmul {
 
     // Tensors are built inline from plain buffers so a classic compute encoder can bind them.
     // Tensor extents are (columns, rows): A is n x n, B is n x n, C = A * B.
-    private static let shaderSource = """
-    #include <metal_stdlib>
-    #include <metal_tensor>
-    #include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
-    using namespace metal;
-    using namespace mpp::tensor_ops;
+    static func shaderSource(for tile: Tile) -> String {
+        """
+        #include <metal_stdlib>
+        #include <metal_tensor>
+        #include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
+        using namespace metal;
+        using namespace mpp::tensor_ops;
 
-    kernel void tensorMatmulFP16(device half* a [[buffer(0)]],
-                                 device half* b [[buffer(1)]],
-                                 device float* c [[buffer(2)]],
-                                 constant int& n [[buffer(3)]],
-                                 uint2 tgid [[threadgroup_position_in_grid]])
-    {
-        auto A = tensor<device half, dextents<int32_t, 2>, tensor_inline>(a, dextents<int32_t, 2>(n, n));
-        auto B = tensor<device half, dextents<int32_t, 2>, tensor_inline>(b, dextents<int32_t, 2>(n, n));
-        auto C = tensor<device float, dextents<int32_t, 2>, tensor_inline>(c, dextents<int32_t, 2>(n, n));
+        kernel void tensorMatmulFP16(device half* a [[buffer(0)]],
+                                     device half* b [[buffer(1)]],
+                                     device float* c [[buffer(2)]],
+                                     constant int& n [[buffer(3)]],
+                                     uint2 tgid [[threadgroup_position_in_grid]])
+        {
+            auto A = tensor<device half, dextents<int32_t, 2>, tensor_inline>(a, dextents<int32_t, 2>(n, n));
+            auto B = tensor<device half, dextents<int32_t, 2>, tensor_inline>(b, dextents<int32_t, 2>(n, n));
+            auto C = tensor<device float, dextents<int32_t, 2>, tensor_inline>(c, dextents<int32_t, 2>(n, n));
 
-        constexpr auto desc = matmul2d_descriptor(\(tileRows), \(tileColumns), dynamic_length_v<int>,
-                                                  false, false, false,
-                                                  matmul2d_descriptor::mode::multiply);
-        matmul2d<desc, execution_simdgroups<\(simdgroupsPerThreadgroup)>> op;
+            constexpr auto desc = matmul2d_descriptor(\(tile.rows), \(tile.columns), dynamic_length_v<int>,
+                                                      false, false, false,
+                                                      matmul2d_descriptor::mode::multiply);
+            matmul2d<desc, execution_simdgroups<\(tile.simdgroups)>> op;
 
-        auto mA = A.slice(0, tgid.y * \(tileRows));
-        auto mB = B.slice(tgid.x * \(tileColumns), 0);
-        auto mC = C.slice(tgid.x * \(tileColumns), tgid.y * \(tileRows));
-        op.run(mA, mB, mC);
+            auto mA = A.slice(0, tgid.y * \(tile.rows));
+            auto mB = B.slice(tgid.x * \(tile.columns), 0);
+            auto mC = C.slice(tgid.x * \(tile.columns), tgid.y * \(tile.rows));
+            op.run(mA, mB, mC);
+        }
+        """
     }
-    """
 }

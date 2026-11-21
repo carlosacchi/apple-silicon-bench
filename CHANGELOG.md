@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-11-21
+
+### Added
+
+- **Neural Engine Throughput (experimental, not scored)**: MobileNetV2 on the Neural Engine with 2, 4 and 8 predictions in flight (async Core ML API, macOS 14+), best result reported. The scored Neural Engine test runs one prediction at a time, so it measures latency (IPS = 1 / latency) and cannot show whether a chip with more Neural Engine capacity processes several inferences at once. On M1 concurrency adds ~3% (1181 vs 1146 IPS).
+- **Tensor Matmul 4096 (experimental, not scored)**: 4096×4096 FP16 matmul through Metal 4 tensor ops, trying 64×32, 64×64 and 128×64 tiles and reporting the fastest; the note lists every tile. On M1 the 64×32 tile of the 2048 test reaches 1232 GFLOPS at 4096, the 128×64 tile 1980 GFLOPS. The 2048 test is unchanged.
+- **DRAM Latency (experimental, not scored)**: pointer chase over a 256 MB buffer, one access per 128-byte cache line, in a single random cycle (107 ns on M1). The scored Latency test uses a 32 MB buffer with 16 pointers per cache line, so many accesses hit L2 or the system level cache and the result depends on cache size (M6 measured 22 ns).
+- **Model reload time** for each Core ML test: the model is loaded a second time and both times are shown. The first load can include Neural Engine compilation (845 ms on M6 the first time, 48 ms afterwards); the reload uses the OS cache.
+- **JSON exports**: `metadata` (`version`, `quickMode`, `passes`) and `systemInfo.gpuModel` / `systemInfo.gpuCores`, so results can be compared per GPU core (e.g. M5 Pro with 16 or 20 GPU cores) and files from different scoring versions told apart. The HTML report shows the GPU core count.
+- `scripts/calibrate-baselines.sh`: runs N passes with a cooldown and prints the median, spread and range of every test.
+- Unit tests for core-tier counting, JSON export fields, the DRAM latency cycle and the Tensor Matmul tile selection.
+
+### Changed
+
+- **SIMD (single-core) uses the per-core NEON kernel of SIMD Multi** (scoring change). The old test passed the same Swift array to `vDSP_vma` as input and as `inout` output, so the 4 MB array was copied on every iteration, and its 12 MB working set made it memory-bound: on M1 the same operations run at 10-11 GFLOPS as written, 16-19 GFLOPS without the copy and ~29 GFLOPS with data in L1. Results varied 14% between runs on M5 Pro, and M6 (16.8 GFLOPS) scored below M5 Pro (25-29 GFLOPS) although its Integer and Float results were higher. `simd` baseline recalibrated on M1 (MacBook Air, 8 GB): 21.50 GFLOPS, median of 5 full-mode runs (was 8.84).
+- **Scored GPU tests (Compute, Particles, Blur, Edge) are timed with GPU timestamps** (scoring change) instead of CPU wall clock around commit and wait, and report total work over total GPU time. Submission and completion cost ~0.14 ms per command buffer on M1, a large share of short dispatches on fast GPUs (Particles takes ~0.3 ms per iteration on M5 Pro), so fast GPUs were under-reported. GPU baselines recalibrated on M1 (median of 5 full-mode runs): Compute 148.52 GFLOPS, Particles 1260.12 Mparts/s, Blur 1970.70 MP/s, Edge 6164.56 MP/s (were 149.2, 909.74, 1870, 5410). A failed GPU test now reports a skip reason instead of 0.
+- **CPU Single-Core, GPU and Total scores are not comparable with earlier versions.** M1 stays at ~1000; chips with large caches (single-core SIMD) and fast GPUs score higher than in v2.5.0. CPU Multi-Core, Memory, Disk and AI scores are unchanged.
+
+### Fixed
+
+- **`coresEfficiency` in JSON exports counted performance cores as efficiency cores on chips without an efficiency tier**: an M5 Pro (6 Super + 12 Performance) was exported as 6 performance + 12 efficiency cores. Only levels the kernel names "Efficiency" are counted now (M5 Pro: 18 + 0, M6: 6 + 6, M1: 4 + 4). `coreLevels` and the HTML report were already correct.
+
 ## [2.5.0] - 2026-11-11
 
 ### Added
@@ -557,6 +579,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actor-based benchmark runner
 - ~2MB standalone binary
 
+[2.6.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.6.0
 [2.5.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.5.0
 [2.4.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.4.0
 [2.3.0]: https://github.com/carlosacchi/apple-silicon-bench/releases/tag/v2.3.0

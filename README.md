@@ -100,7 +100,9 @@ osx-bench run --export results.json
 | M6 | ~2230 |
 | A18 Pro (Neo) | ~1165 |
 
-> **Note on v2.4.0:** SIMD Multi was rewritten (per-core NEON instead of `vDSP`) and its M1 baseline recalibrated, so CPU Multi-Core and Total scores changed. The values above come from v2.2/v2.3 runs (M6 from v2.3.0). Chips with many cores (Pro/Max/Ultra, M6) score higher with v2.4.0.
+> **Note on v2.6.0:** single-core SIMD now uses the same per-core NEON kernel as SIMD Multi (the old `vDSP` test copied a 4 MB array on every iteration and was memory-bound), and the scored GPU tests are timed on the GPU instead of with the CPU clock. Both M1 baselines were recalibrated, so **CPU Single-Core, GPU and Total scores are not comparable with earlier versions**. M1 stays at ~1000, and fast GPUs and large caches score higher than before. The values in the table come from v2.2/v2.3 runs (M6 from v2.3.0) and are being updated with v2.6.0 runs. For reference, v2.5.0 measured M5 Pro (18-core CPU, 1 TB) at 3158-3208 and M6 (1 TB) at 2421.
+
+> **Note on v2.4.0:** SIMD Multi was rewritten (per-core NEON instead of `vDSP`) and its M1 baseline recalibrated, so CPU Multi-Core and Total scores changed. Chips with many cores (Pro/Max/Ultra, M6) score higher with v2.4.0.
 
 > **Note on Disk scores:** SSD capacity directly affects disk benchmark results. Larger SSDs (512GB, 1TB+) have more NAND channels working in parallel, producing higher throughput than smaller SSDs (256GB). Disk scores are clamped (0.25x-4.0x vs baseline) to limit this effect, but comparisons across different SSD capacities should account for this hardware difference.
 
@@ -111,13 +113,16 @@ The AI/ML score is reported **separately** from the Total Score (similar to Geek
 - **AI-Neural Engine**: Core ML inference on the Neural Engine with CPU fallback only (`.cpuAndNeuralEngine`). The report shows how many model operations Core ML plans to run on each device
 - **AI-Accelerate Matmul**: FP32 matrix multiply with Accelerate, which runs on the CPU matrix unit (AMX/SME)
 
-GPU and Neural Engine outputs are checked against the CPU output, and each test reports p50/p95 latency and model load time. These details are also in the JSON export (`informational`, `skipReason` and `details` fields per test, see [Usage](https://github.com/carlosacchi/apple-silicon-bench/wiki/Usage#export-json)).
+GPU and Neural Engine outputs are checked against the CPU output, and each test reports p50/p95 latency and model load time (first load, which can include Neural Engine compilation, and reload from the OS cache). These details are also in the JSON export (`informational`, `skipReason` and `details` fields per test). Since v2.6.0 the JSON also has a `metadata` block (`version`, `quickMode`, `passes`) and the GPU model and core count in `systemInfo` (see [Usage](https://github.com/carlosacchi/apple-silicon-bench/wiki/Usage#export-json)).
 
 **Experimental tests (shown in the report, not scored):**
 - **Tensor Matmul** (AI): FP16 matrix multiply through Metal 4 tensor ops, the API that uses the GPU Neural Accelerators on M5 and later. Requires macOS 26
+- **Tensor Matmul 4096** (AI): the same at 4096×4096, trying three tile sizes and reporting the fastest, to check whether the 2048 test leaves accelerator throughput unused
+- **Neural Engine Throughput** (AI): Neural Engine with 2, 4 and 8 predictions in flight. The scored test runs one at a time and measures latency
 - **Memory Bandwidth** (GPU): GPU-side DRAM bandwidth, which limits LLM token generation
+- **DRAM Latency** (Memory): random pointer chase over 256 MB, one access per cache line. The scored Latency test uses 32 MB and partly measures the caches
 
-Results from M5/M6 Macs for these tests are welcome: run `osx-bench run --only gpu,ai --export results.json` and open an issue with the JSON.
+Results for these tests are welcome, especially from M4 (the last chip without GPU Neural Accelerators, the control for Tensor Matmul), M5/M6 and Max chips: run `osx-bench run --only gpu,ai --export results.json` and open an issue with the JSON.
 
 > **Note on v2.5.0:** AI baselines were placeholders until v2.4.0 (an M1 scored ~2900). They are now calibrated on M1, the Neural Engine test no longer lets Core ML use the GPU, and "BNNS" was renamed "Accelerate Matmul" (it always used `vDSP_mmul`). AI scores are not comparable with earlier versions. The Total Score is unchanged.
 
@@ -136,7 +141,7 @@ For detailed methodology, see the [Wiki](https://github.com/carlosacchi/apple-si
 
 - macOS 13.0 (Ventura) or later
 - Apple Silicon Mac
-- Optional, per test (skipped with a reason otherwise): macOS 14.4+ for the Neural Engine planned-device report, macOS 26+ for the experimental Tensor Matmul
+- Optional, per test (skipped with a reason otherwise): macOS 14+ for the experimental Neural Engine Throughput, macOS 14.4+ for the Neural Engine planned-device report, macOS 26+ for the experimental Tensor Matmul tests
 
 ### Supported Chips
 

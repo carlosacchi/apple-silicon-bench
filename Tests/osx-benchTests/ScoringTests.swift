@@ -35,10 +35,10 @@ struct ScoringTests {
 
     @Test func test_gpuScore_informationalBandwidthDoesNotChangeScore() {
         let scored = [
-            TestResult(name: "Compute", value: 149.2, unit: "GFLOPS"),
-            TestResult(name: "Particles", value: 909.74, unit: "Mparts/s"),
-            TestResult(name: "Blur", value: 1870, unit: "MP/s"),
-            TestResult(name: "Edge", value: 5410, unit: "MP/s")
+            TestResult(name: "Compute", value: 148.52, unit: "GFLOPS"),
+            TestResult(name: "Particles", value: 1260.12, unit: "Mparts/s"),
+            TestResult(name: "Blur", value: 1970.70, unit: "MP/s"),
+            TestResult(name: "Edge", value: 6164.56, unit: "MP/s")
         ]
         let withBandwidth = scored + [
             .skipped(name: "Memory Bandwidth", unit: "GB/s", reason: "unavailable", informational: true)
@@ -47,6 +47,33 @@ struct ScoringTests {
         #expect(abs(scores(for: .gpu, scored).gpu - 1000) < 1e-6)
         #expect(abs(scores(for: .gpu, withBandwidth).gpu - 1000) < 1e-6)
         #expect(abs(scores(for: .gpu, withBandwidth).total - 1000) < 1e-6)
+    }
+
+    @Test func test_cpuSingleScore_m1BaselineScores1000() {
+        // v2.6.0 baselines; SIMD is the NEON kernel shared with the multi-core test
+        let tests = [
+            TestResult(name: "Integer", value: 1570, unit: "Mops/s"),
+            TestResult(name: "Float", value: 126.8, unit: "Mops/s"),
+            TestResult(name: "SIMD", value: 21.50, unit: "GFLOPS"),
+            TestResult(name: "Crypto", value: 1480, unit: "MB/s"),
+            TestResult(name: "Compression", value: 498.57, unit: "MB/s")
+        ]
+        #expect(abs(scores(for: .cpuSingleCore, tests).cpuSingleCore - 1000) < 1e-6)
+    }
+
+    @Test func test_memoryScore_informationalDRAMLatencyDoesNotChangeScore() {
+        let scored = [
+            TestResult(name: "Read", value: 55.97, unit: "GB/s"),
+            TestResult(name: "Write", value: 25.59, unit: "GB/s"),
+            TestResult(name: "Copy", value: 27.84, unit: "GB/s"),
+            TestResult(name: "Latency", value: 54.95, unit: "ns", higherIsBetter: false)
+        ]
+        let withDRAM = scored + [
+            TestResult(name: MemoryBenchmark.dramLatencyTestName, value: 500, unit: "ns",
+                       higherIsBetter: false, informational: true)
+        ]
+        #expect(abs(scores(for: .memory, scored).memory - 1000) < 1e-6)
+        #expect(abs(scores(for: .memory, withDRAM).memory - 1000) < 1e-6)
     }
 
     @Test func test_benchmarkResult_isIncomplete_onlyForScoredTests() {

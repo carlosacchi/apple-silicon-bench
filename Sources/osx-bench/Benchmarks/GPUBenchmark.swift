@@ -39,41 +39,32 @@ struct GPUBenchmark: Benchmark {
         var results: [TestResult] = []
         let testDuration = Double(duration) / 4.0  // Divide among 4 tests
 
+        func scored(_ name: String, _ unit: String, _ value: Double?) -> TestResult {
+            guard let value = value else {
+                return .skipped(name: name, unit: unit, reason: "GPU kernel or command buffer failed")
+            }
+            return TestResult(name: name, value: value, unit: unit)
+        }
+
         // Matrix multiplication (compute)
-        let computeResult = runComputeTest(
-            device: device,
-            commandQueue: commandQueue,
-            library: library,
-            duration: testDuration
-        )
-        results.append(TestResult(name: "Compute", value: computeResult, unit: "GFLOPS"))
+        results.append(scored("Compute", "GFLOPS", runComputeTest(
+            device: device, commandQueue: commandQueue, library: library, duration: testDuration
+        )))
 
         // Particle simulation
-        let particleResult = runParticleTest(
-            device: device,
-            commandQueue: commandQueue,
-            library: library,
-            duration: testDuration
-        )
-        results.append(TestResult(name: "Particles", value: particleResult, unit: "Mparts/s"))
+        results.append(scored("Particles", "Mparts/s", runParticleTest(
+            device: device, commandQueue: commandQueue, library: library, duration: testDuration
+        )))
 
         // Gaussian blur
-        let blurResult = runBlurTest(
-            device: device,
-            commandQueue: commandQueue,
-            library: library,
-            duration: testDuration
-        )
-        results.append(TestResult(name: "Blur", value: blurResult, unit: "MP/s"))
+        results.append(scored("Blur", "MP/s", runBlurTest(
+            device: device, commandQueue: commandQueue, library: library, duration: testDuration
+        )))
 
         // Edge detection
-        let edgeResult = runEdgeTest(
-            device: device,
-            commandQueue: commandQueue,
-            library: library,
-            duration: testDuration
-        )
-        results.append(TestResult(name: "Edge", value: edgeResult, unit: "MP/s"))
+        results.append(scored("Edge", "MP/s", runEdgeTest(
+            device: device, commandQueue: commandQueue, library: library, duration: testDuration
+        )))
 
         // Informational: GPU-side memory bandwidth (not scored yet)
         results.append(runBandwidthTest(
@@ -122,52 +113,28 @@ struct GPUBenchmark: Benchmark {
             return skipped("Could not allocate GPU buffers")
         }
 
-        func encodeAndRun(dispatches: Int) -> Double? {
-            autoreleasepool {
-                guard let commandBuffer = commandQueue.makeCommandBuffer(),
-                      let encoder = commandBuffer.makeComputeCommandEncoder() else { return nil }
+        let width = pipeline.maxTotalThreadsPerThreadgroup
+        var count = UInt32(vectorCount)
+        guard let samples = GPUTiming.measure(
+            commandQueue: commandQueue,
+            duration: duration,
+            dispatchesPerCommandBuffer: Self.bandwidthDispatchesPerCommandBuffer,
+            encode: { encoder in
                 encoder.setComputePipelineState(pipeline)
                 encoder.setBuffer(source, offset: 0, index: 0)
                 encoder.setBuffer(destination, offset: 0, index: 1)
-                var count = UInt32(vectorCount)
                 encoder.setBytes(&count, length: MemoryLayout<UInt32>.size, index: 2)
-                let width = pipeline.maxTotalThreadsPerThreadgroup
-                for _ in 0..<dispatches {
-                    encoder.dispatchThreads(
-                        MTLSize(width: vectorCount, height: 1, depth: 1),
-                        threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1)
-                    )
-                }
-                encoder.endEncoding()
-                commandBuffer.commit()
-                commandBuffer.waitUntilCompleted()
-                guard commandBuffer.status == .completed, commandBuffer.error == nil else { return nil }
-                let gpuTime = commandBuffer.gpuEndTime - commandBuffer.gpuStartTime
-                return gpuTime > 0 ? gpuTime : nil
+                encoder.dispatchThreads(
+                    MTLSize(width: vectorCount, height: 1, depth: 1),
+                    threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1)
+                )
             }
-        }
-
-        // Warmup (also touches every page of both buffers)
-        guard encodeAndRun(dispatches: 1) != nil else {
+        ) else {
             return skipped("GPU command buffer failed")
         }
 
-        var samples: [Double] = []
-        var totalGPUTime = 0.0
-        var totalDispatches = 0
-        let endTime = CFAbsoluteTimeGetCurrent() + duration
-        repeat {
-            guard let gpuTime = encodeAndRun(dispatches: Self.bandwidthDispatchesPerCommandBuffer) else {
-                return skipped("GPU command buffer failed during measurement")
-            }
-            totalGPUTime += gpuTime
-            totalDispatches += Self.bandwidthDispatchesPerCommandBuffer
-            samples.append(gpuTime / Double(Self.bandwidthDispatchesPerCommandBuffer))
-        } while CFAbsoluteTimeGetCurrent() < endTime || samples.count < 3
-
         // Each dispatch reads and writes the whole buffer
-        let bytesMoved = 2.0 * Double(bufferSize) * Double(totalDispatches)
-        let gbps = bytesMoved / totalGPUTime / 1e9
+        let gbps = 2.0 * Double(bufferSize) / GPUTiming.mean(samples) / 1e9
 
         var details = TestDetails(latencies: samples)
         details.note = "GPU copy kernel, \(bufferSize / (1024 * 1024)) MB read + write per pass; experimental, not scored"
@@ -176,14 +143,12 @@ struct GPUBenchmark: Benchmark {
 
     // MARK: - Matrix Multiplication Test
 
-    private func runComputeTest(device: MTLDevice, commandQueue: MTLCommandQueue, library: MTLLibrary, duration: Double) -> Double {
-        guard let function = library.makeFunction(name: "matrixMultiply") else {
-            // Function not found in library
-            return 0
-        }
-        guard let pipeline = try? device.makeComputePipelineState(function: function) else {
-            // Pipeline creation failed
-            return 0
+    /// GFLOPS of a naive matmul kernel (one thread per output element, no tiling).
+    /// It is limited by the cache hierarchy, not by ALU throughput.
+    private func runComputeTest(device: MTLDevice, commandQueue: MTLCommandQueue, library: MTLLibrary, duration: Double) -> Double? {
+        guard let function = library.makeFunction(name: "matrixMultiply"),
+              let pipeline = try? device.makeComputePipelineState(function: function) else {
+            return nil
         }
 
         let n = matrixSize
@@ -192,7 +157,7 @@ struct GPUBenchmark: Benchmark {
         guard let bufferA = device.makeBuffer(length: bufferSize, options: .storageModeShared),
               let bufferB = device.makeBuffer(length: bufferSize, options: .storageModeShared),
               let bufferC = device.makeBuffer(length: bufferSize, options: .storageModeShared) else {
-            return 0
+            return nil
         }
 
         // Initialize matrices with random data
@@ -203,71 +168,28 @@ struct GPUBenchmark: Benchmark {
             ptrB[i] = Float.random(in: 0...1)
         }
 
-        var totalOps = 0.0
-        var iterations = 0
-        let endTime = CFAbsoluteTimeGetCurrent() + duration
+        var size = UInt32(n)
+        let threadgroupSize = MTLSize(width: 16, height: 16, depth: 1)
+        let threadgroups = MTLSize(width: (n + 15) / 16, height: (n + 15) / 16, depth: 1)
+        guard let samples = GPUTiming.measure(commandQueue: commandQueue, duration: duration, encode: { encoder in
+            encoder.setComputePipelineState(pipeline)
+            encoder.setBuffer(bufferA, offset: 0, index: 0)
+            encoder.setBuffer(bufferB, offset: 0, index: 1)
+            encoder.setBuffer(bufferC, offset: 0, index: 2)
+            encoder.setBytes(&size, length: MemoryLayout<UInt32>.size, index: 3)
+            encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadgroupSize)
+        }) else { return nil }
 
-        // Warmup
-        if !quickMode {
-            autoreleasepool {
-                if let commandBuffer = commandQueue.makeCommandBuffer(),
-                   let encoder = commandBuffer.makeComputeCommandEncoder() {
-                    encoder.setComputePipelineState(pipeline)
-                    encoder.setBuffer(bufferA, offset: 0, index: 0)
-                    encoder.setBuffer(bufferB, offset: 0, index: 1)
-                    encoder.setBuffer(bufferC, offset: 0, index: 2)
-                    var size = UInt32(n)
-                    encoder.setBytes(&size, length: MemoryLayout<UInt32>.size, index: 3)
-
-                    let threadgroupSize = MTLSize(width: 16, height: 16, depth: 1)
-                    let threadgroups = MTLSize(width: (n + 15) / 16, height: (n + 15) / 16, depth: 1)
-                    encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadgroupSize)
-                    encoder.endEncoding()
-                    commandBuffer.commit()
-                    commandBuffer.waitUntilCompleted()
-                }
-            }
-        }
-
-        while CFAbsoluteTimeGetCurrent() < endTime {
-            autoreleasepool {
-                guard let commandBuffer = commandQueue.makeCommandBuffer(),
-                      let encoder = commandBuffer.makeComputeCommandEncoder() else { return }
-
-                encoder.setComputePipelineState(pipeline)
-                encoder.setBuffer(bufferA, offset: 0, index: 0)
-                encoder.setBuffer(bufferB, offset: 0, index: 1)
-                encoder.setBuffer(bufferC, offset: 0, index: 2)
-                var size = UInt32(n)
-                encoder.setBytes(&size, length: MemoryLayout<UInt32>.size, index: 3)
-
-                let threadgroupSize = MTLSize(width: 16, height: 16, depth: 1)
-                let threadgroups = MTLSize(width: (n + 15) / 16, height: (n + 15) / 16, depth: 1)
-                encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadgroupSize)
-                encoder.endEncoding()
-
-                let start = CFAbsoluteTimeGetCurrent()
-                commandBuffer.commit()
-                commandBuffer.waitUntilCompleted()
-                let elapsed = CFAbsoluteTimeGetCurrent() - start
-
-                // Matrix multiply: 2*n^3 FLOPs (n^3 multiplies + n^3 adds)
-                let flops = Double(2 * n * n * n)
-                totalOps += flops / elapsed
-                iterations += 1
-            }
-        }
-
-        // Return average GFLOPS
-        return iterations > 0 ? (totalOps / Double(iterations)) / 1_000_000_000 : 0
+        // Matrix multiply: 2*n^3 FLOPs (n^3 multiplies + n^3 adds)
+        return 2.0 * Double(n) * Double(n) * Double(n) / GPUTiming.mean(samples) / 1e9
     }
 
     // MARK: - Particle Simulation Test
 
-    private func runParticleTest(device: MTLDevice, commandQueue: MTLCommandQueue, library: MTLLibrary, duration: Double) -> Double {
+    private func runParticleTest(device: MTLDevice, commandQueue: MTLCommandQueue, library: MTLLibrary, duration: Double) -> Double? {
         guard let function = library.makeFunction(name: "particleSimulation"),
               let pipeline = try? device.makeComputePipelineState(function: function) else {
-            return 0
+            return nil
         }
 
         let count = particleCount
@@ -275,7 +197,7 @@ struct GPUBenchmark: Benchmark {
         let bufferSize = count * 6 * MemoryLayout<Float>.size
 
         guard let particleBuffer = device.makeBuffer(length: bufferSize, options: .storageModeShared) else {
-            return 0
+            return nil
         }
 
         // Initialize particles
@@ -289,56 +211,47 @@ struct GPUBenchmark: Benchmark {
             ptr[i * 6 + 5] = Float.random(in: -1...1)      // vel.z
         }
 
-        var totalParticles = 0.0
-        var iterations = 0
-        let endTime = CFAbsoluteTimeGetCurrent() + duration
-
         let threadgroupSize = min(pipeline.maxTotalThreadsPerThreadgroup, 256)
         let threadgroups = (count + threadgroupSize - 1) / threadgroupSize
+        var particleCount = UInt32(count)
+        var dt: Float = 0.016  // 60 FPS timestep
 
-        while CFAbsoluteTimeGetCurrent() < endTime {
-            autoreleasepool {
-                guard let commandBuffer = commandQueue.makeCommandBuffer(),
-                      let encoder = commandBuffer.makeComputeCommandEncoder() else { return }
+        guard let samples = GPUTiming.measure(commandQueue: commandQueue, duration: duration, encode: { encoder in
+            encoder.setComputePipelineState(pipeline)
+            encoder.setBuffer(particleBuffer, offset: 0, index: 0)
+            encoder.setBytes(&particleCount, length: MemoryLayout<UInt32>.size, index: 1)
+            encoder.setBytes(&dt, length: MemoryLayout<Float>.size, index: 2)
+            encoder.dispatchThreadgroups(
+                MTLSize(width: threadgroups, height: 1, depth: 1),
+                threadsPerThreadgroup: MTLSize(width: threadgroupSize, height: 1, depth: 1)
+            )
+        }) else { return nil }
 
-                encoder.setComputePipelineState(pipeline)
-                encoder.setBuffer(particleBuffer, offset: 0, index: 0)
-                var particleCount = UInt32(count)
-                encoder.setBytes(&particleCount, length: MemoryLayout<UInt32>.size, index: 1)
-                var dt: Float = 0.016  // 60 FPS timestep
-                encoder.setBytes(&dt, length: MemoryLayout<Float>.size, index: 2)
-
-                encoder.dispatchThreadgroups(
-                    MTLSize(width: threadgroups, height: 1, depth: 1),
-                    threadsPerThreadgroup: MTLSize(width: threadgroupSize, height: 1, depth: 1)
-                )
-                encoder.endEncoding()
-
-                let start = CFAbsoluteTimeGetCurrent()
-                commandBuffer.commit()
-                commandBuffer.waitUntilCompleted()
-                let elapsed = CFAbsoluteTimeGetCurrent() - start
-
-                totalParticles += Double(count) / elapsed
-                iterations += 1
-            }
-        }
-
-        // Return million particles per second
-        return iterations > 0 ? (totalParticles / Double(iterations)) / 1_000_000 : 0
+        // Million particles per second
+        return Double(count) / GPUTiming.mean(samples) / 1_000_000
     }
 
     // MARK: - Blur Test
 
-    private func runBlurTest(device: MTLDevice, commandQueue: MTLCommandQueue, library: MTLLibrary, duration: Double) -> Double {
-        guard let function = library.makeFunction(name: "gaussianBlur"),
+    private func runBlurTest(device: MTLDevice, commandQueue: MTLCommandQueue, library: MTLLibrary, duration: Double) -> Double? {
+        runImageFilterTest(kernel: "gaussianBlur", device: device, commandQueue: commandQueue, library: library, duration: duration)
+    }
+
+    // MARK: - Edge Detection Test
+
+    private func runEdgeTest(device: MTLDevice, commandQueue: MTLCommandQueue, library: MTLLibrary, duration: Double) -> Double? {
+        runImageFilterTest(kernel: "sobelEdgeDetection", device: device, commandQueue: commandQueue, library: library, duration: duration)
+    }
+
+    /// Megapixels per second of a texture-to-texture filter kernel over a square RGBA8 image
+    private func runImageFilterTest(kernel: String, device: MTLDevice, commandQueue: MTLCommandQueue,
+                                    library: MTLLibrary, duration: Double) -> Double? {
+        guard let function = library.makeFunction(name: kernel),
               let pipeline = try? device.makeComputePipelineState(function: function) else {
-            return 0
+            return nil
         }
 
         let size = imageSize
-
-        // Create textures
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba8Unorm,
             width: size,
@@ -349,106 +262,23 @@ struct GPUBenchmark: Benchmark {
 
         guard let inputTexture = device.makeTexture(descriptor: descriptor),
               let outputTexture = device.makeTexture(descriptor: descriptor) else {
-            return 0
+            return nil
         }
 
         // Fill input with procedural pattern
         fillTextureWithPattern(inputTexture)
 
-        var totalPixels = 0.0
-        var iterations = 0
-        let endTime = CFAbsoluteTimeGetCurrent() + duration
-
         let threadgroupSize = MTLSize(width: 16, height: 16, depth: 1)
-        let threadgroups = MTLSize(
-            width: (size + 15) / 16,
-            height: (size + 15) / 16,
-            depth: 1
-        )
+        let threadgroups = MTLSize(width: (size + 15) / 16, height: (size + 15) / 16, depth: 1)
 
-        while CFAbsoluteTimeGetCurrent() < endTime {
-            autoreleasepool {
-                guard let commandBuffer = commandQueue.makeCommandBuffer(),
-                      let encoder = commandBuffer.makeComputeCommandEncoder() else { return }
+        guard let samples = GPUTiming.measure(commandQueue: commandQueue, duration: duration, encode: { encoder in
+            encoder.setComputePipelineState(pipeline)
+            encoder.setTexture(inputTexture, index: 0)
+            encoder.setTexture(outputTexture, index: 1)
+            encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadgroupSize)
+        }) else { return nil }
 
-                encoder.setComputePipelineState(pipeline)
-                encoder.setTexture(inputTexture, index: 0)
-                encoder.setTexture(outputTexture, index: 1)
-                encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadgroupSize)
-                encoder.endEncoding()
-
-                let start = CFAbsoluteTimeGetCurrent()
-                commandBuffer.commit()
-                commandBuffer.waitUntilCompleted()
-                let elapsed = CFAbsoluteTimeGetCurrent() - start
-
-                totalPixels += Double(size * size) / elapsed
-                iterations += 1
-            }
-        }
-
-        // Return megapixels per second
-        return iterations > 0 ? (totalPixels / Double(iterations)) / 1_000_000 : 0
-    }
-
-    // MARK: - Edge Detection Test
-
-    private func runEdgeTest(device: MTLDevice, commandQueue: MTLCommandQueue, library: MTLLibrary, duration: Double) -> Double {
-        guard let function = library.makeFunction(name: "sobelEdgeDetection"),
-              let pipeline = try? device.makeComputePipelineState(function: function) else {
-            return 0
-        }
-
-        let size = imageSize
-
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm,
-            width: size,
-            height: size,
-            mipmapped: false
-        )
-        descriptor.usage = [.shaderRead, .shaderWrite]
-
-        guard let inputTexture = device.makeTexture(descriptor: descriptor),
-              let outputTexture = device.makeTexture(descriptor: descriptor) else {
-            return 0
-        }
-
-        fillTextureWithPattern(inputTexture)
-
-        var totalPixels = 0.0
-        var iterations = 0
-        let endTime = CFAbsoluteTimeGetCurrent() + duration
-
-        let threadgroupSize = MTLSize(width: 16, height: 16, depth: 1)
-        let threadgroups = MTLSize(
-            width: (size + 15) / 16,
-            height: (size + 15) / 16,
-            depth: 1
-        )
-
-        while CFAbsoluteTimeGetCurrent() < endTime {
-            autoreleasepool {
-                guard let commandBuffer = commandQueue.makeCommandBuffer(),
-                      let encoder = commandBuffer.makeComputeCommandEncoder() else { return }
-
-                encoder.setComputePipelineState(pipeline)
-                encoder.setTexture(inputTexture, index: 0)
-                encoder.setTexture(outputTexture, index: 1)
-                encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadgroupSize)
-                encoder.endEncoding()
-
-                let start = CFAbsoluteTimeGetCurrent()
-                commandBuffer.commit()
-                commandBuffer.waitUntilCompleted()
-                let elapsed = CFAbsoluteTimeGetCurrent() - start
-
-                totalPixels += Double(size * size) / elapsed
-                iterations += 1
-            }
-        }
-
-        return iterations > 0 ? (totalPixels / Double(iterations)) / 1_000_000 : 0
+        return Double(size * size) / GPUTiming.mean(samples) / 1_000_000
     }
 
     // MARK: - Helpers
@@ -483,6 +313,58 @@ struct GPUBenchmark: Benchmark {
             withBytes: pixelData,
             bytesPerRow: rowBytes
         )
+    }
+}
+
+// MARK: - GPU Timing
+
+/// GPU-side timing shared by the GPU tests and Tensor Matmul.
+///
+/// Each sample is the GPU execution time of one command buffer (`gpuEndTime - gpuStartTime`)
+/// divided by its dispatches. This leaves out CPU-side submission and completion latency
+/// (~0.14 ms per command buffer on M1), which until v2.5.0 was part of every scored GPU test
+/// and made up a large share of short dispatches on fast GPUs (e.g. Particles, ~0.3 ms on M5 Pro).
+enum GPUTiming {
+    /// Runs one warmup command buffer, then measures until `duration` has passed and at least
+    /// `minSamples` samples exist. Returns seconds per dispatch, or nil if the GPU reported an error.
+    static func measure(
+        commandQueue: MTLCommandQueue,
+        duration: Double,
+        dispatchesPerCommandBuffer: Int = 1,
+        minSamples: Int = 3,
+        encode: (MTLComputeCommandEncoder) -> Void
+    ) -> [Double]? {
+        func runOnce() -> Double? {
+            autoreleasepool {
+                guard let commandBuffer = commandQueue.makeCommandBuffer(),
+                      let encoder = commandBuffer.makeComputeCommandEncoder() else { return nil }
+                for _ in 0..<dispatchesPerCommandBuffer {
+                    encode(encoder)
+                }
+                encoder.endEncoding()
+                commandBuffer.commit()
+                commandBuffer.waitUntilCompleted()
+                guard commandBuffer.status == .completed, commandBuffer.error == nil else { return nil }
+                let gpuTime = commandBuffer.gpuEndTime - commandBuffer.gpuStartTime
+                return gpuTime > 0 ? gpuTime / Double(dispatchesPerCommandBuffer) : nil
+            }
+        }
+
+        // Warmup (also touches every page of the buffers)
+        guard runOnce() != nil else { return nil }
+
+        var samples: [Double] = []
+        let endTime = CFAbsoluteTimeGetCurrent() + duration
+        repeat {
+            guard let sample = runOnce() else { return nil }
+            samples.append(sample)
+        } while CFAbsoluteTimeGetCurrent() < endTime || samples.count < minSamples
+        return samples
+    }
+
+    /// Mean seconds per dispatch: total work over total GPU time, not the mean of per-sample rates
+    static func mean(_ samples: [Double]) -> Double {
+        samples.reduce(0, +) / Double(max(samples.count, 1))
     }
 }
 

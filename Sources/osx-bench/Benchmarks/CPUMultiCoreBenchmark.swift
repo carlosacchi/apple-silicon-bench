@@ -17,7 +17,6 @@ struct CPUMultiCoreBenchmark: Benchmark {
     // Scaled parameters based on mode
     private var integerOperations: Int { quickMode ? 10_000_000 : 100_000_000 }
     private var floatOperations: Int { quickMode ? 5_000_000 : 50_000_000 }
-    private var simdIterations: Int { quickMode ? 20 : 100 }
     private var cryptoDataSize: Int { quickMode ? 8 * 1024 * 1024 : 64 * 1024 * 1024 }
     private var compressionDataSize: Int { quickMode ? 4 * 1024 * 1024 : 32 * 1024 * 1024 }
 
@@ -37,7 +36,7 @@ struct CPUMultiCoreBenchmark: Benchmark {
         }
         results.append(TestResult(name: "Float_Multi", value: floatResult, unit: "Mops/s"))
 
-        // SIMD / Accelerate operations (parallel)
+        // SIMD operations (NEON, parallel)
         let simdResult = await measureParallelForDuration(seconds: testDuration) {
             runSIMDTest()
         }
@@ -140,54 +139,8 @@ struct CPUMultiCoreBenchmark: Benchmark {
 
     // MARK: - SIMD Test (per-core NEON, compute-bound)
     private func runSIMDTest() -> Double {
-        // Explicit SIMD vectors (lowered to NEON) instead of Accelerate/vDSP:
-        // on Apple Silicon vDSP can be dispatched to a matrix unit (AMX/SME) shared
-        // per CPU cluster, so its throughput scales with clusters, not cores, and
-        // drops when more threads contend for it. NEON units are private per core.
-        // Same workload shape as the single-core test (multiply-add, add, dot product)
-        // on 8K floats per vector (32KB × 3 = 96KB, fits in L1).
-        let vectorSize = 8_192
-        let lanes = 8
-        let chunks = vectorSize / lanes
-        let iterations = quickMode ? 2_400 : 12_000
-
-        var vectorA = ContiguousArray<SIMD8<Float>>(repeating: .zero, count: chunks)
-        var vectorB = ContiguousArray<SIMD8<Float>>(repeating: .zero, count: chunks)
-        var vectorC = ContiguousArray<SIMD8<Float>>(repeating: .zero, count: chunks)
-
-        for chunk in 0..<chunks {
-            for lane in 0..<lanes {
-                let i = chunk * lanes + lane
-                vectorA[chunk][lane] = Float(i) * 0.001
-                vectorB[chunk][lane] = Float(vectorSize - i) * 0.001
-            }
-        }
-
-        var checksum = SIMD8<Float>.zero
-        let start = CFAbsoluteTimeGetCurrent()
-
-        vectorA.withUnsafeBufferPointer { a in
-            vectorB.withUnsafeBufferPointer { b in
-                vectorC.withUnsafeMutableBufferPointer { c in
-                    for _ in 0..<iterations {
-                        for i in 0..<chunks { c[i] = a[i] * b[i] + c[i] }
-                        for i in 0..<chunks { c[i] = a[i] + b[i] }
-                        var dot = SIMD8<Float>.zero
-                        for i in 0..<chunks { dot = dot + a[i] * c[i] }
-                        checksum += dot
-                    }
-                }
-            }
-        }
-
-        let duration = CFAbsoluteTimeGetCurrent() - start
-
-        // Prevent the compiler from eliminating the loops
-        if checksum.sum().isNaN { print("") }
-
-        // 6 ops per element, same accounting as the single-core SIMD test
-        let totalOps = Double(iterations) * Double(vectorSize) * 6.0
-        return totalOps / duration / 1_000_000_000
+        // Same kernel as the single-core test (see SIMDWorkload)
+        SIMDWorkload.run(iterations: quickMode ? 2_400 : 12_000)
     }
 
     // MARK: - Crypto Test

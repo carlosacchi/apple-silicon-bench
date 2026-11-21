@@ -66,7 +66,7 @@ actor BenchmarkRunner {
         case .cpuMultiCore:
             benchmark = CPUMultiCoreBenchmark(duration: duration, coreCount: systemInfo.totalCores, quickMode: quickMode)
         case .memory:
-            benchmark = MemoryBenchmark(duration: duration)
+            benchmark = MemoryBenchmark(duration: duration, quickMode: quickMode)
         case .disk:
             benchmark = DiskBenchmark(duration: duration, quickMode: quickMode)
         case .gpu:
@@ -114,7 +114,11 @@ actor BenchmarkRunner {
             parts.append(String(format: "p50 %.2f ms, p95 %.2f ms", p50, p95))
         }
         if let load = details.loadTimeMs {
-            parts.append(String(format: "load %.0f ms", load))
+            var part = String(format: "load %.0f ms", load)
+            if let reload = details.reloadTimeMs {
+                part += String(format: ", reload %.0f ms", reload)
+            }
+            parts.append(part)
         }
         if !parts.isEmpty {
             print("        \(parts.joined(separator: " · "))")

@@ -20,6 +20,11 @@ struct AIBenchmark: Benchmark {
     static let gpuTestName = "GPU"
     static let neuralEngineTestName = "Neural Engine"
     static let matmulTestName = "Accelerate Matmul"
+    /// Informational: Neural Engine with several predictions in flight
+    static let neuralEngineThroughputTestName = "Neural Engine Throughput"
+
+    /// Predictions kept in flight by the throughput test; the best result is reported
+    static let inFlightCounts = [2, 4, 8]
 
     // Configuration based on mode
     private var warmupIterations: Int { quickMode ? 5 : 20 }
@@ -64,13 +69,22 @@ struct AIBenchmark: Benchmark {
         )
         results.append(ane.result)
 
+        // Informational: Neural Engine throughput with concurrent predictions. The test above
+        // runs one prediction at a time, so it measures latency (IPS = 1 / latency)
+        print("    Running Neural Engine throughput (experimental)...")
+        results.append(await runConcurrentInference(
+            modelURL: modelURL, duration: quickMode ? 0.25 : 0.5, reference: cpu.output
+        ))
+
         // Test 4: Accelerate FP32 matrix multiply (runs on the CPU matrix unit)
         print("    Running Accelerate matmul...")
         results.append(runAccelerateMatmul(duration: testDuration))
 
         // Informational: GPU FP16 matmul through Metal 4 tensor ops
         print("    Running GPU tensor matmul (experimental)...")
-        results.append(GPUTensorMatmul(duration: quickMode ? 0.5 : 1.5).run())
+        results.append(GPUTensorMatmul.standard(duration: quickMode ? 0.5 : 1.5).run())
+        print("    Running GPU tensor matmul 4096 (experimental)...")
+        results.append(GPUTensorMatmul.large(durationPerTile: quickMode ? 0.25 : 0.5).run())
 
         return results
     }
@@ -80,8 +94,10 @@ struct AIBenchmark: Benchmark {
             .skipped(name: Self.cpuTestName, unit: "IPS", reason: reason),
             .skipped(name: Self.gpuTestName, unit: "IPS", reason: reason),
             .skipped(name: Self.neuralEngineTestName, unit: "IPS", reason: reason),
+            .skipped(name: Self.neuralEngineThroughputTestName, unit: "IPS", reason: reason, informational: true),
             .skipped(name: Self.matmulTestName, unit: "GFLOPS", reason: reason),
-            .skipped(name: GPUTensorMatmul.testName, unit: GPUTensorMatmul.unit, reason: reason, informational: true)
+            .skipped(name: GPUTensorMatmul.testName, unit: GPUTensorMatmul.unit, reason: reason, informational: true),
+            .skipped(name: GPUTensorMatmul.largeTestName, unit: GPUTensorMatmul.unit, reason: reason, informational: true)
         ]
     }
 
@@ -116,6 +132,12 @@ struct AIBenchmark: Benchmark {
             return .skipped(name, "Model failed to load: \(error.localizedDescription)")
         }
         let loadTimeMs = (CFAbsoluteTimeGetCurrent() - loadStart) * 1000
+
+        // Load again: the first load may include device-specific compilation (on the Neural Engine
+        // up to ~1 s the first time after a reboot or OS update), the second one uses the OS cache
+        let reloadStart = CFAbsoluteTimeGetCurrent()
+        let reloadTimeMs: Double? = (try? MLModel(contentsOf: modelURL, configuration: config))
+            .map { _ in (CFAbsoluteTimeGetCurrent() - reloadStart) * 1000 }
 
         guard let inputDescription = model.modelDescription.inputDescriptionsByName.first else {
             return .skipped(name, "Model has no inputs")
@@ -161,6 +183,7 @@ struct AIBenchmark: Benchmark {
         let output = Self.outputVector(firstOutput)
         var details = TestDetails(latencies: latencies)
         details.loadTimeMs = loadTimeMs
+        details.reloadTimeMs = reloadTimeMs
         if let reference = reference {
             let check = Self.validate(output: output, reference: reference)
             details.validationPassed = check.passed
@@ -247,6 +270,96 @@ struct AIBenchmark: Benchmark {
         }
 
         return try MLDictionaryFeatureProvider(dictionary: featureDict)
+    }
+
+    // MARK: - Neural Engine Throughput (informational)
+
+    /// Neural Engine inferences per second with several predictions in flight (async Core ML API),
+    /// for each count in `inFlightCounts`; reports the best. Shows whether the Neural Engine
+    /// (or several of them) can process more than one MobileNetV2 inference at a time.
+    private func runConcurrentInference(modelURL: URL, duration: Double, reference: [Double]?) async -> TestResult {
+        let name = Self.neuralEngineThroughputTestName
+        func skipped(_ reason: String) -> TestResult {
+            .skipped(name: name, unit: "IPS", reason: reason, informational: true)
+        }
+        guard #available(macOS 14.0, *) else {
+            return skipped("Requires macOS 14 or later (async Core ML predictions)")
+        }
+
+        let config = MLModelConfiguration()
+        config.computeUnits = .cpuAndNeuralEngine
+        let model: MLModel
+        let input: MLFeatureProvider
+        do {
+            model = try MLModel(contentsOf: modelURL, configuration: config)
+            guard let inputDescription = model.modelDescription.inputDescriptionsByName.first else {
+                return skipped("Model has no inputs")
+            }
+            input = try createSyntheticInput(for: inputDescription.value)
+        } catch {
+            return skipped("Model failed to load: \(error.localizedDescription)")
+        }
+
+        var runs: [(inFlight: Int, ips: Double, latencies: [Double])] = []
+        let firstOutput: MLFeatureProvider
+        do {
+            // Warmup; the first output is kept for validation
+            firstOutput = try await model.prediction(from: input)
+            for _ in 1..<warmupIterations {
+                _ = try await model.prediction(from: input)
+            }
+            for inFlight in Self.inFlightCounts {
+                let run = try await Self.concurrentPredictions(
+                    model: model, input: input, inFlight: inFlight, duration: duration
+                )
+                runs.append((inFlight, run.ips, run.latencies))
+            }
+        } catch {
+            return skipped("Prediction failed: \(error.localizedDescription)")
+        }
+
+        guard let best = runs.max(by: { $0.ips < $1.ips }) else {
+            return skipped("No predictions completed")
+        }
+
+        var details = TestDetails(latencies: best.latencies)
+        if let reference = reference {
+            let check = Self.validate(output: Self.outputVector(firstOutput), reference: reference)
+            details.validationPassed = check.passed
+            details.validation = check.message
+        }
+        let perCount = runs.map { String(format: "%d: %.0f", $0.inFlight, $0.ips) }.joined(separator: ", ")
+        details.note = "\(best.inFlight) predictions in flight (IPS by count \(perCount)); experimental, not scored"
+        return TestResult(name: name, value: best.ips, unit: "IPS", informational: true, details: details)
+    }
+
+    /// Keeps `inFlight` predictions running until `duration` has passed; IPS over the whole window
+    @available(macOS 14.0, *)
+    private static func concurrentPredictions(
+        model: MLModel, input: MLFeatureProvider, inFlight: Int, duration: Double
+    ) async throws -> (ips: Double, latencies: [Double]) {
+        let start = CFAbsoluteTimeGetCurrent()
+        let endTime = start + duration
+        let latencies = try await withThrowingTaskGroup(of: [Double].self) { group in
+            for _ in 0..<inFlight {
+                group.addTask {
+                    var local: [Double] = []
+                    while CFAbsoluteTimeGetCurrent() < endTime {
+                        let predictionStart = CFAbsoluteTimeGetCurrent()
+                        _ = try await model.prediction(from: input)
+                        local.append(CFAbsoluteTimeGetCurrent() - predictionStart)
+                    }
+                    return local
+                }
+            }
+            var all: [Double] = []
+            for try await local in group {
+                all.append(contentsOf: local)
+            }
+            return all
+        }
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+        return (Double(latencies.count) / elapsed, latencies)
     }
 
     // MARK: - Output Validation

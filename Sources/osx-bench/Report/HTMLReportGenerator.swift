@@ -374,6 +374,10 @@ struct HTMLReportGenerator {
                         <div class="info-value">\(escapeHTML(systemInfo.coreSummary))</div>
                     </div>
                     <div class="info-item">
+                        <div class="info-label">GPU</div>
+                        <div class="info-value">\(systemInfo.gpuCores > 0 ? "\(systemInfo.gpuCores)-core" : "Unknown")</div>
+                    </div>
+                    <div class="info-item">
                         <div class="info-label">Memory</div>
                         <div class="info-value">\(systemInfo.ramGB) GB</div>
                     </div>
@@ -719,7 +723,11 @@ struct HTMLReportGenerator {
                 meta.append(escapeHTML(line))
             }
             if let load = details.loadTimeMs {
-                meta.append(escapeHTML(String(format: "Model load %.0f ms", load)))
+                var line = String(format: "Model load %.0f ms", load)
+                if let reload = details.reloadTimeMs {
+                    line += String(format: " (reload %.0f ms)", reload)
+                }
+                meta.append(escapeHTML(line))
             }
             if let plan = details.computePlanSummary {
                 meta.append(escapeHTML("Planned devices: \(plan)"))

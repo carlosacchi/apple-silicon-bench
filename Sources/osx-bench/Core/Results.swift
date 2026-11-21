@@ -31,8 +31,11 @@ struct TestDetails: Codable, Equatable {
     var latencyP50Ms: Double?
     var latencyP95Ms: Double?
     var latencyStdDevMs: Double?
-    /// Time to load the model for this compute configuration
+    /// Time to load the model for this compute configuration (first load in this run; may include
+    /// device-specific compilation when the OS has not cached it)
     var loadTimeMs: Double?
+    /// Time to load the same model again right after, from the OS compilation cache (v2.6.0+)
+    var reloadTimeMs: Double?
     /// Planned device per model operation (Core ML MLComputePlan), e.g. ["Neural Engine": 60, "CPU": 6]
     var computePlan: [String: Int]?
     /// Output check against a reference (e.g. Core ML CPU output or a CPU matmul)
@@ -42,7 +45,7 @@ struct TestDetails: Codable, Equatable {
 
     init(samples: Int? = nil, latencyMeanMs: Double? = nil, latencyP50Ms: Double? = nil,
          latencyP95Ms: Double? = nil, latencyStdDevMs: Double? = nil, loadTimeMs: Double? = nil,
-         computePlan: [String: Int]? = nil, validationPassed: Bool? = nil, validation: String? = nil,
+         reloadTimeMs: Double? = nil, computePlan: [String: Int]? = nil, validationPassed: Bool? = nil, validation: String? = nil,
          note: String? = nil) {
         self.samples = samples
         self.latencyMeanMs = latencyMeanMs
@@ -50,6 +53,7 @@ struct TestDetails: Codable, Equatable {
         self.latencyP95Ms = latencyP95Ms
         self.latencyStdDevMs = latencyStdDevMs
         self.loadTimeMs = loadTimeMs
+        self.reloadTimeMs = reloadTimeMs
         self.computePlan = computePlan
         self.validationPassed = validationPassed
         self.validation = validation
@@ -304,7 +308,7 @@ struct BenchmarkScorer {
         // CPU Single-Core - median from 5 M1 runs
         "integer": 1570,              // 1570 Mops/s on M1
         "float": 126.8,               // 126.8 Mops/s on M1
-        "simd": 8.84,                 // 8.84 GFLOPS on M1
+        "simd": 21.50,                // 21.50 GFLOPS on M1 (NEON, L1-resident, median of 5 runs, v2.6.0; was 8.84 with vDSP)
         "crypto": 1480,               // 1480 MB/s on M1
         "compression": 498.57,        // 498.57 MB/s on M1
 
@@ -331,11 +335,12 @@ struct BenchmarkScorer {
         "disk_rand_read": 43,         // 43 MB/s on M1 (1GB file, true random)
         "disk_rand_write": 17,        // 17 MB/s on M1 (with final F_FULLFSYNC)
 
-        // GPU (GFLOPS, Mparts/s, MP/s) - median from 5 M1 runs (8-core GPU)
-        "gpu_compute": 149.2,         // 149.2 GFLOPS matrix multiply on M1
-        "gpu_particles": 909.74,      // 909.74 Mparts/s on M1
-        "gpu_blur": 1870,             // 1870 MP/s on M1
-        "gpu_edge": 5410,             // 5410 MP/s on M1
+        // GPU (GFLOPS, Mparts/s, MP/s) - median from 5 M1 runs (MacBook Air, 7-core GPU), v2.6.0
+        // Timed with GPU timestamps since v2.6.0 (CPU wall clock before: 149.2, 909.74, 1870, 5410)
+        "gpu_compute": 148.52,        // 148.52 GFLOPS naive matrix multiply on M1
+        "gpu_particles": 1260.12,     // 1260.12 Mparts/s on M1
+        "gpu_blur": 1970.70,          // 1970.70 MP/s on M1
+        "gpu_edge": 6164.56,          // 6164.56 MP/s on M1
 
         // AI/ML (IPS and GFLOPS) - median from 5 M1 runs (MacBook Air, 8 GB), full mode, v2.5.0
         // MobileNetV2 inference per compute unit + Accelerate FP32 matmul (2048x2048)
@@ -343,8 +348,10 @@ struct BenchmarkScorer {
         "ai_gpu": 174.70,             // 174.70 IPS, Core ML .cpuAndGPU
         "ai_neural engine": 1118.65,  // 1118.65 IPS, Core ML .cpuAndNeuralEngine
         "ai_accelerate matmul": 824.22, // 824.22 GFLOPS, vDSP_mmul (AMX on Apple Silicon)
-        // Not scored (informational), M1 reference for comparison:
-        // Tensor Matmul 1574 GFLOPS (FP16, Metal 4), GPU Memory Bandwidth 57.0 GB/s
+        // Not scored (informational), M1 reference for comparison (v2.6.0, idle MacBook Air):
+        // Tensor Matmul 1599 GFLOPS (FP16, Metal 4; 1574 in v2.5.0), Tensor Matmul 4096 1980 GFLOPS
+        // (best tile 128x64; 64x32 1232, 64x64 1855), GPU Memory Bandwidth 60.1 GB/s,
+        // DRAM Latency 107 ns, Neural Engine Throughput 1181 IPS (sequential test 1146 IPS)
     ]
 
     func calculateScores(from results: BenchmarkResults, coreCount: Int = 8) -> BenchmarkScores {
@@ -518,15 +525,27 @@ struct BenchmarkScorer {
 // MARK: - Results Exporter
 
 struct ResultsExporter {
-    /// Export results to JSON without machine ID for privacy
-    static func exportJSON(results: BenchmarkResults, scores: BenchmarkScores, systemInfo: SystemInfo, to path: String) throws {
-        struct ExportData: Codable {
-            let systemInfo: SystemInfoExport  // Privacy-safe version without machine ID
-            let results: BenchmarkResults
-            let scores: BenchmarkScores
-        }
+    /// Run settings stored with each export, so files from different versions
+    /// (scoring changes) or modes can be told apart
+    struct ExportMetadata: Codable, Equatable {
+        let version: String
+        let quickMode: Bool
+        /// Passes run with --repeats; the exported results are the median pass by total score
+        let passes: Int
+    }
 
-        let data = ExportData(systemInfo: systemInfo.forExport(), results: results, scores: scores)
+    struct ExportData: Codable {
+        let metadata: ExportMetadata
+        let systemInfo: SystemInfoExport  // Privacy-safe version without machine ID
+        let results: BenchmarkResults
+        let scores: BenchmarkScores
+    }
+
+    /// Export results to JSON without machine ID for privacy
+    static func exportJSON(results: BenchmarkResults, scores: BenchmarkScores, systemInfo: SystemInfo,
+                           quickMode: Bool, passes: Int, to path: String) throws {
+        let metadata = ExportMetadata(version: AppInfo.version, quickMode: quickMode, passes: passes)
+        let data = ExportData(metadata: metadata, systemInfo: systemInfo.forExport(), results: results, scores: scores)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601

@@ -145,7 +145,8 @@ struct Run: AsyncParsableCommand {
 
         // Export JSON if requested
         if let exportPath = export {
-            try ResultsExporter.exportJSON(results: results, scores: scores, systemInfo: systemInfo, to: exportPath)
+            try ResultsExporter.exportJSON(results: results, scores: scores, systemInfo: systemInfo,
+                                           quickMode: quick, passes: totalPasses, to: exportPath)
             print("📁 JSON exported to: \(exportPath)")
             if let advancedResults = advancedResults {
                 try ResultsExporter.exportAdvancedJSON(

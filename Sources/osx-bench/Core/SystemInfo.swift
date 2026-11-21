@@ -306,16 +306,16 @@ struct SystemInfo: Codable {
         return levels
     }
 
-    /// Cores in the efficiency tier: the level the kernel names "Efficiency",
-    /// or the slowest (last) level if none carries that name.
+    /// Cores in the efficiency tier: only levels the kernel names "Efficiency".
     /// On a 2S + 4P + 6E chip this returns 6, so Super and Performance count as performance cores.
-    private static func efficiencyCoreCount(in levels: [CoreLevel]) -> Int {
+    /// A chip without an efficiency tier (e.g. M5 Pro, 6S + 12P) returns 0: its slowest level is
+    /// "Performance", not "Efficiency". Levels without a kernel name are already named
+    /// "Efficiency" by `getCoreLevels()` (every level after the first), so no fallback is needed here.
+    static func efficiencyCoreCount(in levels: [CoreLevel]) -> Int {
         guard levels.count > 1 else { return 0 }
-        let named = levels.filter { $0.name.caseInsensitiveCompare("Efficiency") == .orderedSame }
-        if !named.isEmpty {
-            return named.reduce(0) { $0 + $1.count }
-        }
-        return levels.last?.count ?? 0
+        return levels
+            .filter { $0.name.caseInsensitiveCompare("Efficiency") == .orderedSame }
+            .reduce(0) { $0 + $1.count }
     }
 
     private static func sysctlInt(_ name: String) -> Int? {
@@ -455,7 +455,9 @@ struct SystemInfo: Codable {
             diskVendor: diskVendor,
             diskModel: diskModel,
             diskCapacityGB: diskCapacityGB,
-            diskType: diskType
+            diskType: diskType,
+            gpuModel: gpuModel == "Unknown" ? nil : gpuModel,
+            gpuCores: gpuCores > 0 ? gpuCores : nil
         )
     }
 }
@@ -474,4 +476,8 @@ struct SystemInfoExport: Codable {
     let diskModel: String
     let diskCapacityGB: Int
     let diskType: String
+    /// GPU name and core count from system_profiler; nil when they could not be read.
+    /// Needed to compare GPU results per core (e.g. M5 Pro with 16 or 20 GPU cores).
+    let gpuModel: String?
+    let gpuCores: Int?
 }

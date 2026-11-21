@@ -1,5 +1,4 @@
 import Foundation
-import Accelerate
 import CryptoKit
 import Compression
 
@@ -16,7 +15,6 @@ struct CPUSingleCoreBenchmark: Benchmark {
     // Scaled parameters based on mode - these are per-iteration sizes
     private var integerOperations: Int { quickMode ? 10_000_000 : 100_000_000 }
     private var floatOperations: Int { quickMode ? 5_000_000 : 50_000_000 }
-    private var simdIterations: Int { quickMode ? 20 : 100 }
     private var cryptoDataSize: Int { quickMode ? 8 * 1024 * 1024 : 64 * 1024 * 1024 }
     private var compressionDataSize: Int { quickMode ? 4 * 1024 * 1024 : 32 * 1024 * 1024 }
 
@@ -36,7 +34,7 @@ struct CPUSingleCoreBenchmark: Benchmark {
         }
         results.append(TestResult(name: "Float", value: floatResult, unit: "Mops/s"))
 
-        // SIMD / Accelerate operations
+        // SIMD operations (NEON)
         let simdResult = measureForDuration(seconds: testDuration, warmup: !quickMode) {
             runSIMDTest()
         }
@@ -122,39 +120,11 @@ struct CPUSingleCoreBenchmark: Benchmark {
         return Double(floatOperations * 4) / duration / 1_000_000
     }
 
-    // MARK: - SIMD Test (Accelerate Framework)
+    // MARK: - SIMD Test (per-core NEON, compute-bound)
     private func runSIMDTest() -> Double {
-        let vectorSize = 1_000_000
-
-        var vectorA = [Float](repeating: 0, count: vectorSize)
-        var vectorB = [Float](repeating: 0, count: vectorSize)
-        var vectorC = [Float](repeating: 0, count: vectorSize)
-
-        // Initialize with data
-        for i in 0..<vectorSize {
-            vectorA[i] = Float(i) * 0.001
-            vectorB[i] = Float(vectorSize - i) * 0.001
-        }
-
-        let start = CFAbsoluteTimeGetCurrent()
-
-        for _ in 0..<simdIterations {
-            // Vector multiply-add: C = A * B + C
-            vDSP_vma(vectorA, 1, vectorB, 1, vectorC, 1, &vectorC, 1, vDSP_Length(vectorSize))
-
-            // Vector add
-            vDSP_vadd(vectorA, 1, vectorB, 1, &vectorC, 1, vDSP_Length(vectorSize))
-
-            // Dot product
-            var dotResult: Float = 0
-            vDSP_dotpr(vectorA, 1, vectorB, 1, &dotResult, vDSP_Length(vectorSize))
-        }
-
-        let duration = CFAbsoluteTimeGetCurrent() - start
-
-        // GFLOPS calculation: 3 operations * vectorSize * iterations * 2 (for multiply-add)
-        let totalOps = Double(simdIterations) * Double(vectorSize) * 6.0
-        return totalOps / duration / 1_000_000_000
+        // Same kernel as the multi-core test (see SIMDWorkload). Until v2.5.0 this used vDSP
+        // on 1M-float vectors and copied one of them on every iteration (memory-bound).
+        SIMDWorkload.run(iterations: quickMode ? 2_400 : 12_000)
     }
 
     // MARK: - Crypto Test
